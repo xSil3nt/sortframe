@@ -6,3 +6,4 @@
 .heading-actions{display:flex;gap:8px;align-items:center}
 .check-row{display:flex;align-items:center;gap:8px;color:#a9b2aa;font-size:10px;margin:0 0 15px}.check-row input{accent-color:var(--accent)}
 @media(max-width:700px){.heading-actions{align-items:flex-end;flex-direction:column}.heading-actions .button{min-height:28px}.heading-actions .button.secondary{display:none}}
+.market-login{display:flex;align-items:flex-end;flex-wrap:wrap;gap:10px;margin-top:11px}.market-login .field-label{margin:0;min-width:190px;flex:1}.market-login input,.compact-input{height:33px;border:1px solid #334037;border-radius:5px;background:#111713;color:var(--text);padding:0 9px;font-size:11px}.compact-input{width:76px}.review-panel{margin:16px 0}.review-panel>.button{margin-top:13px}.review-panel .hint{margin-bottom:12px}
