@@ -1,4 +1,5 @@
 import type { Quote } from "../shared/models.js";
+import { readCache, writeCache } from "./store.js";
 
 type MarketItem = { id: string; slug: string; gameRef: string };
 type MarketOrder = { type?: string; platinum?: number; quantity?: number; visible?: boolean; user?: { status?: string; lastSeen?: string; platform?: string; crossplay?: boolean } };
@@ -61,10 +62,16 @@ export async function getQuote(options: QuoteOptions): Promise<Quote | null> {
   const key = `${options.platform}|${options.crossplay}|${options.itemId}`;
   const cached = quoteCache.get(key);
   if (cached && cached.expiry > Date.now()) return cached.quote;
+  const persisted = readCache<{ expiry: number; quote: Quote | null }>(`quote:${key}`);
+  if (persisted && persisted.expiry > Date.now()) {
+    quoteCache.set(key, persisted);
+    return persisted.quote;
+  }
   const items = await listItems();
   const exact = items.find((item) => item.gameRef === options.itemId);
   if (!exact) {
     quoteCache.set(key, { expiry: Date.now() + quoteTtl, quote: null });
+    writeCache(`quote:${key}`, quoteCache.get(key));
     return null;
   }
   const headers = { Platform: options.platform, Crossplay: String(options.crossplay) };
@@ -79,12 +86,13 @@ export async function getQuote(options: QuoteOptions): Promise<Quote | null> {
     source: "warframe.market" as const
   };
   quoteCache.set(key, { expiry: Date.now() + quoteTtl, quote });
+  writeCache(`quote:${key}`, quoteCache.get(key));
   return quote;
 }
 
 export function getCachedQuote(itemId: string): Quote | null {
   const key = `pc|false|${itemId}`;
-  const cached = quoteCache.get(key);
+  const cached = quoteCache.get(key) ?? readCache<{ expiry: number; quote: Quote | null }>(`quote:${key}`);
   if (!cached || cached.expiry <= Date.now()) return null;
   return cached.quote;
 }

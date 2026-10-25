@@ -10,7 +10,7 @@ const lexRecipes: Recipe[] = [
   { outputId: "aklex", outputName: "Aklex Prime", isPrimeEquipment: true, ingredients: [{ id: "lex", name: "Lex Prime", quantity: 2 }, { id: "akblueprint", name: "Aklex Blueprint", quantity: 1 }] }
 ];
 const row = (id: string, kind: InventoryEntry["kind"], quantity: number, invested = 0): InventoryEntry => ({ id, name: ({ lex: "Lex Prime", aklex: "Aklex Prime", barrel: "Lex Barrel", receiver: "Lex Receiver", blueprint: "Lex Blueprint", akblueprint: "Aklex Blueprint", vasto: "Vasto Prime", akvasto: "Akvasto Prime", vb: "Vasto Barrel", afuris: "Afuris Prime" } as Record<string, string>)[id] ?? id, kind, category: "Prime", quantity, invested, mastered: false, ducats: 15, prime: true });
-function snapshot(entries: InventoryEntry[]): Snapshot { return { revision: randomUUID(), source: "demo", capturedAt: new Date().toISOString(), entries }; }
+function snapshot(entries: InventoryEntry[], pendingBuilds: Snapshot["pendingBuilds"] = []): Snapshot { return { revision: randomUUID(), source: "demo", capturedAt: new Date().toISOString(), entries, pendingBuilds }; }
 function lexInventory(lex: number, aklex: number, invested = 0) {
   return [row("lex", "equipment", lex, invested), row("aklex", "equipment", aklex), row("barrel", "component", 10), row("receiver", "component", 10), row("blueprint", "component", 10), row("akblueprint", "component", 10)];
 }
@@ -73,6 +73,23 @@ test("catalog equipment absent from inventory still gets a collection reserve", 
   const gear = plan.items.find((item) => item.id === "fulmin");
   assert.equal(gear?.quantity, 0);
   assert.equal(plan.items.find((item) => item.id === "receiver")?.reserved, 1);
+});
+
+test("pending equipment supplies the collection target without reserving ingredients again", () => {
+  const recipes: Recipe[] = [{ outputId: "fulmin", outputName: "Fulmin Prime", isPrimeEquipment: true, ingredients: [{ id: "receiver", name: "Fulmin Receiver", quantity: 1 }] }];
+  const pending = [{ itemId: "fulmin", name: "Fulmin Prime", quantity: 1 }];
+  const plan = planCollection(snapshot([row("receiver", "component", 1)], pending), recipes, baseSettings);
+  assert.equal(plan.items.find((item) => item.id === "receiver")?.reserved, 0);
+  assert.equal(plan.recipeAllocations.find((item) => item.itemId === "fulmin")?.quantity, 1);
+});
+
+test("reusable blueprint is reserved once when building multiple copies", () => {
+  const recipe: Recipe[] = [{ outputId: "weapon", outputName: "Weapon Prime", isPrimeEquipment: true, ingredients: [{ id: "part", name: "Weapon Prime Part", quantity: 1 }, { id: "blueprint", name: "Weapon Prime Blueprint", quantity: 1, reusable: true }] }];
+  const entries = [row("weapon", "equipment", 0), row("part", "component", 2), row("blueprint", "component", 1)];
+  const settings = { ...baseSettings, targets: { weapon: 2 } };
+  const plan = planCollection(snapshot(entries), recipe, settings);
+  assert.equal(plan.items.find((item) => item.id === "part")?.reserved, 2);
+  assert.equal(plan.items.find((item) => item.id === "blueprint")?.reserved, 1);
 });
 
 test("surplus price threshold does not override collection reserve", () => {

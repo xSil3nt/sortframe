@@ -2,7 +2,7 @@
 
 Sortframe plans which Prime parts to keep for crafting, which surplus parts may be worth selling, and which can go to Baro for Ducats. Inventory decisions are suggestions. Sortframe never consumes items in game.
 
-The project is early development. The reserve planner and synthetic demo work locally. Companion login and sync, live Warframe recipes, marketplace prices, account sign-in, and order publishing are not connected yet. No installer or portable release is published until those account flows and a fresh-user install have been validated.
+The project is early development. The reserve planner, live Prime catalog, public prices, and synthetic demo work locally. Companion login and sync, marketplace account sign-in, and order publishing are not connected yet. No installer or portable release is published until those account flows and a fresh-user install have been validated.
 
 ## Current build
 
@@ -10,13 +10,15 @@ The project is early development. The reserve planner and synthetic demo work lo
 - Complete collection and mastery-only planning modes.
 - Investment and user locks count toward collection targets.
 - Dual-wield duplicate weapons and repeated recipe ingredients are aggregated.
-- Public warframe.market v2 item matching and PC order-book quotes, with local cache and request pacing.
+- Live Prime equipment recipes from WFCD and Prime part identifiers from the public warframe.market v2 catalog.
+- PC-only warframe.market order-book quotes with 24-hour metadata and five-minute quote caches, using a two-request-per-second queue.
+- Import of a companion inventory JSON response, including mastery, invested copies, and recognized pending builds.
 - Per-user SQLite database in the Windows local application data directory.
 - Synthetic demo inventory, validated JSON import/export, and protected snapshots.
 - Loopback-only local server with origin checks on write requests.
 - Windows launcher and release packaging workflow source.
 
-The current demo shows the Lex/Aklex, Vasto/Akvasto, and Afuris duplicate-part examples. It is synthetic and does not contain a real inventory snapshot. Market quotes apply to imported normalized snapshots whose item IDs are exact in-game reference paths.
+The current demo shows the Lex/Aklex, Vasto/Akvasto, and Afuris duplicate-part examples. It is synthetic and does not contain a real inventory snapshot. Live crafting metadata is fetched from WFCD and warframe.market when a real inventory is imported. If these sources are unavailable, all imported inventory is held for review.
 
 ## Development
 
@@ -39,7 +41,7 @@ npm run build
 
 The local server binds to `127.0.0.1`. The production launcher stores the database in `%LOCALAPPDATA%\Sortframe`; portable builds use the same per-user location. App files and user data are kept separately. The JSON export contains the current snapshot, so review it before sharing.
 
-Sortframe does not currently ask for account credentials. Do not enter passwords into the demo build. Account adapters will be added only after the official login steps and local token handling are validated.
+Sortframe does not currently ask for account credentials, sync from Warframe, or publish marketplace orders. Do not enter passwords into this build. Account adapters will be enabled only after the login flows and local token handling are validated.
 
 ## Distribution
 
@@ -47,7 +49,7 @@ The Windows x64 release workflow is configured to package a bundled Node runtime
 
 ## Third-party data
 
-Planned item metadata uses [WFCD/warframe-items](https://github.com/WFCD/warframe-items), which is distributed under the MIT license. The current demo data is hand-authored synthetic data. Sortframe is an independent community project and is not affiliated with Digital Extremes, Warframe, Steam, or warframe.market.
+Prime item and recipe metadata comes from [WFCD/warframe-items](https://github.com/WFCD/warframe-items), distributed under the MIT license, and is cached locally. Public market prices come from the warframe.market API. The current demo inventory is synthetic. Sortframe is an independent community project and is not affiliated with Digital Extremes, Warframe, Steam, or warframe.market.
 
 ## License
 

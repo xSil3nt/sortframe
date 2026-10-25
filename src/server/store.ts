@@ -18,6 +18,14 @@ db.exec("PRAGMA journal_mode=WAL; CREATE TABLE IF NOT EXISTS state (key TEXT PRI
 
 const getStatement = db.prepare("SELECT value FROM state WHERE key = ?");
 const setStatement = db.prepare("INSERT INTO state (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value");
+export function readCache<T>(key: string): T | undefined {
+  const result = getStatement.get(`cache:${key}`) as { value: string } | undefined;
+  if (!result) return undefined;
+  try { return JSON.parse(result.value) as T; } catch { return undefined; }
+}
+export function writeCache(key: string, value: unknown) {
+  setStatement.run(`cache:${key}`, JSON.stringify(value));
+}
 function getValue<T>(key: string, parse: (input: unknown) => T, fallback: T): T {
   const result = getStatement.get(key) as { value: string } | undefined;
   if (!result) return fallback;

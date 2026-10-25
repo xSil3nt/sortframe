@@ -17,14 +17,15 @@ export const SnapshotSchema = z.object({
   revision: z.string().uuid(),
   source: z.enum(["demo", "companion", "import"]),
   capturedAt: z.string().datetime(),
-  entries: z.array(InventoryEntrySchema)
+  entries: z.array(InventoryEntrySchema),
+  pendingBuilds: z.array(z.object({ itemId: z.string().min(1), name: z.string().min(1), quantity: z.number().int().positive() })).default([])
 });
 
 export const RecipeSchema = z.object({
   outputId: z.string().min(1),
   outputName: z.string().min(1),
   isPrimeEquipment: z.boolean().default(false),
-  ingredients: z.array(z.object({ id: z.string().min(1), quantity: z.number().int().positive(), name: z.string().min(1) }))
+  ingredients: z.array(z.object({ id: z.string().min(1), quantity: z.number().int().positive(), name: z.string().min(1), reusable: z.boolean().default(false) }))
 });
 
 export const SettingsSchema = z.object({
@@ -57,7 +58,7 @@ export const ListingDraftSchema = z.object({
 
 export type InventoryEntry = z.infer<typeof InventoryEntrySchema>;
 export type Snapshot = z.infer<typeof SnapshotSchema>;
-export type Recipe = z.infer<typeof RecipeSchema>;
+export type Recipe = z.input<typeof RecipeSchema>;
 export type Settings = z.infer<typeof SettingsSchema>;
 export type Quote = z.infer<typeof QuoteSchema>;
 export type ListingDraft = z.infer<typeof ListingDraftSchema>;
@@ -66,6 +67,7 @@ export type Recommendation = "Keep" | "Sell for platinum" | "Ducats" | "Check";
 export type PlannedItem = InventoryEntry & {
   reserved: number;
   surplus: number;
+  pendingQuantity: number;
   recommendation: Recommendation;
   reasons: string[];
 };

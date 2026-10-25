@@ -12,7 +12,7 @@ export const demoRecipes: Recipe[] = [
 export function demoSnapshot(): Snapshot {
   const now = new Date().toISOString();
   return {
-    revision: randomUUID(), source: "demo", capturedAt: now,
+    revision: randomUUID(), source: "demo", capturedAt: now, pendingBuilds: [],
     entries: [
       { id: "lex-prime", name: "Lex Prime", kind: "equipment", category: "Secondary", quantity: 3, invested: 1, mastered: true, ducats: 45, platinumAsk: 12, prime: true },
       { id: "aklex-prime", name: "Aklex Prime", kind: "equipment", category: "Secondary", quantity: 0, invested: 0, mastered: false, ducats: 45, prime: true },

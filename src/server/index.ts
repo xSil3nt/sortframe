@@ -7,6 +7,8 @@ import { SnapshotSchema, SettingsSchema, type Snapshot } from "../shared/models.
 import { planCollection } from "../shared/craft.js";
 import { demoRecipes, demoSnapshot } from "./demo.js";
 import { getCachedQuote, getQuote } from "./market.js";
+import { loadCraftData } from "./catalog.js";
+import { parseCompanionInventory } from "./companion.js";
 import { db, loadSettings, loadSnapshot, saveSettings, saveSnapshot } from "./store.js";
 
 const app = Fastify({ logger: false, bodyLimit: 12 * 1024 * 1024, trustProxy: false });
@@ -31,7 +33,20 @@ app.get("/api/settings", async () => loadSettings());
 app.get("/api/plan", async () => {
   const snapshot = loadSnapshot();
   const priced = { ...snapshot, entries: snapshot.entries.map((entry) => ({ ...entry, platinumAsk: getCachedQuote(entry.id)?.lowestAsk ?? entry.platinumAsk })) };
-  return planCollection(priced, demoRecipes, loadSettings());
+  const data = snapshot.source === "demo" ? { items: snapshot.entries, recipes: demoRecipes, source: "demo" as const } : await loadCraftData(demoSnapshot().entries, demoRecipes);
+  if (snapshot.source !== "demo" && data.source !== "live") return {
+    items: snapshot.entries.map((entry) => ({ ...entry, reserved: entry.quantity, surplus: 0, pendingQuantity: 0, recommendation: "Check" as const, reasons: ["Live Prime recipes are unavailable; item was held for review."] })),
+    recipeAllocations: [], revision: snapshot.revision
+  };
+  return planCollection(priced, data.recipes, loadSettings(), data.items);
+});
+app.get("/api/catalog/status", async () => {
+  const data = await loadCraftData(demoSnapshot().entries, demoRecipes);
+  return { source: data.source, loadedAt: data.loadedAt, itemCount: data.items.length, recipeCount: data.recipes.length };
+});
+app.post("/api/catalog/refresh", async () => {
+  const data = await loadCraftData(demoSnapshot().entries, demoRecipes, true);
+  return { source: data.source, loadedAt: data.loadedAt, itemCount: data.items.length, recipeCount: data.recipes.length };
 });
 app.get<{ Querystring: { itemId?: string; platform?: string; crossplay?: string } }>("/api/quote", async (request, reply) => {
   const { itemId, platform = "pc", crossplay = "false" } = request.query;
@@ -64,6 +79,15 @@ app.post("/api/import", async (request, reply) => {
   const parsed = SnapshotSchema.safeParse(request.body);
   if (!parsed.success || parsed.data.entries.length === 0) return reply.code(400).send({ error: "Import is empty or invalid. Your saved inventory was kept." });
   return saveSnapshot({ ...parsed.data, source: "import", revision: randomUUID() });
+});
+app.post("/api/import-companion", async (request, reply) => {
+  try {
+    const data = await loadCraftData(demoSnapshot().entries, demoRecipes);
+    if (data.source !== "live") return reply.code(503).send({ error: "Live Prime item data is unavailable. Your saved inventory was left unchanged." });
+    return saveSnapshot(parseCompanionInventory(request.body, data));
+  } catch (error) {
+    return reply.code(400).send({ error: error instanceof Error ? error.message : "Companion inventory could not be imported." });
+  }
 });
 app.post("/api/demo/reset", async () => saveSnapshot(demoSnapshot()));
 app.get("/api/export", async (_request, reply) => {

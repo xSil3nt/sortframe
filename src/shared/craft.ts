@@ -8,9 +8,14 @@ export type CraftPlan = {
 
 const sortInventory = (entries: InventoryEntry[]) => new Map(entries.map((entry) => [entry.id, entry]));
 
-export function planCollection(snapshot: Snapshot, recipes: Recipe[], settings: Settings): CraftPlan {
+export function planCollection(snapshot: Snapshot, recipes: Recipe[], settings: Settings, catalog: InventoryEntry[] = []): CraftPlan {
   const entries = [...snapshot.entries];
   const existingIds = new Set(entries.map((entry) => entry.id));
+  for (const entry of catalog) {
+    if (existingIds.has(entry.id)) continue;
+    entries.push({ ...entry, quantity: 0, invested: 0, mastered: false });
+    existingIds.add(entry.id);
+  }
   for (const recipe of recipes.filter((item) => item.isPrimeEquipment && !existingIds.has(item.outputId))) {
     entries.push({ id: recipe.outputId, name: recipe.outputName, kind: "equipment", category: "Prime Gear", quantity: 0, invested: 0, mastered: false, prime: true });
     existingIds.add(recipe.outputId);
@@ -21,7 +26,10 @@ export function planCollection(snapshot: Snapshot, recipes: Recipe[], settings: 
   const reserved = new Map<string, number>();
   const protectedCopies = new Map<string, number>();
   const reasons = new Map<string, string[]>();
+  const futureStock = new Map<string, number>();
+  for (const build of snapshot.pendingBuilds ?? []) futureStock.set(build.itemId, (futureStock.get(build.itemId) ?? 0) + build.quantity);
   const allocations: CraftPlan["recipeAllocations"] = [];
+  const allocatedReusable = new Set<string>();
   const recipeFor = (id: string) => recipeMap.get(id);
 
   for (const entry of entries) {
@@ -64,7 +72,15 @@ export function planCollection(snapshot: Snapshot, recipes: Recipe[], settings: 
       list.push(`Used for ${destination}`);
       reasons.set(id, list);
     }
-    const missing = quantity - use;
+    const pending = Math.min(futureStock.get(id) ?? 0, quantity - use);
+    if (pending > 0) {
+      futureStock.set(id, (futureStock.get(id) ?? 0) - pending);
+      allocations.push({ itemId: id, itemName: item.name, quantity: pending, destination, chain: [...chain, "Pending build"] });
+      const list = reasons.get(id) ?? [];
+      list.push(`${pending} pending for ${destination}`);
+      reasons.set(id, list);
+    }
+    const missing = quantity - use - pending;
     if (!missing) return;
     const recipe = recipeFor(id);
     if (!recipe || stack.has(id)) {
@@ -76,7 +92,9 @@ export function planCollection(snapshot: Snapshot, recipes: Recipe[], settings: 
     }
     stack.add(id);
     for (const ingredient of recipe.ingredients) {
-      allocate(ingredient.id, ingredient.quantity * missing, destination, [...chain, item.name, ingredient.name]);
+      if (ingredient.reusable && allocatedReusable.has(ingredient.id)) continue;
+      if (ingredient.reusable) allocatedReusable.add(ingredient.id);
+      allocate(ingredient.id, ingredient.reusable ? ingredient.quantity : ingredient.quantity * missing, destination, [...chain, item.name, ingredient.name]);
     }
     stack.delete(id);
   };
@@ -91,13 +109,17 @@ export function planCollection(snapshot: Snapshot, recipes: Recipe[], settings: 
     const surplus = Math.max(0, entry.quantity - reserve);
     const warnings = reasons.get(entry.id) ?? [];
     const isUnmappedPart = entry.kind === "component" && !recipes.some((recipe) => recipe.ingredients.some((i) => i.id === entry.id));
+    const desired = settings.targets[entry.id] ?? (settings.mode === "collection" ? 1 : Number(entry.mastered));
+    const pendingForItem = snapshot.pendingBuilds?.filter((build) => build.itemId === entry.id).reduce((sum, build) => sum + build.quantity, 0) ?? 0;
+    const missingUnsupportedTarget = entry.kind === "equipment" && desired > entry.quantity + pendingForItem && !recipeMap.has(entry.id);
+    if (missingUnsupportedTarget) warnings.push("Collection recipe is missing; held for review.");
     let recommendation: PlannedItem["recommendation"] = "Keep";
-    if (isUnmappedPart) recommendation = "Check";
+    if (isUnmappedPart || missingUnsupportedTarget) recommendation = "Check";
     else if (surplus > 0 && entry.ducats === undefined && entry.platinumAsk === undefined) recommendation = "Check";
     else if (surplus > 0 && (entry.platinumAsk ?? 0) >= settings.platinumThreshold) recommendation = "Sell for platinum";
     else if (surplus > 0 && entry.ducats !== undefined) recommendation = "Ducats";
     else if (surplus > 0) recommendation = "Check";
-    return { ...entry, reserved: reserve, surplus, recommendation, reasons: warnings };
+    return { ...entry, reserved: reserve, surplus, pendingQuantity: pendingForItem, recommendation, reasons: warnings };
   });
 
   return { items: planned, recipeAllocations: allocations, revision: snapshot.revision };

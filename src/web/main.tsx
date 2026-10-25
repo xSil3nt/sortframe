@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import type { CraftPlan } from "../shared/craft.js";
 import type { Snapshot, Settings, PlannedItem } from "../shared/models.js";
@@ -28,6 +28,7 @@ function App() {
   const [busy, setBusy] = useState(false);
   const [quotes, setQuotes] = useState<Record<string, Quote | null>>({});
   const [quoteStatus, setQuoteStatus] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
 
   const refresh = useCallback(async () => {
     const [nextSnapshot, nextPlan, nextSettings] = await Promise.all([api<Snapshot>("/api/snapshot"), api<CraftPlan>("/api/plan"), api<Settings>("/api/settings")]);
@@ -37,14 +38,31 @@ function App() {
   }, []);
 
   useEffect(() => { refresh().catch((error) => setNotice(error.message)); }, [refresh]);
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        searchRef.current?.focus();
+      }
+      if (event.key === "Escape") setSelected(null);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   const refreshQuotes = useCallback(async (current: Snapshot) => {
     const ids = current.entries.filter((item) => item.prime).map((item) => item.id);
-    if (!ids.length || ids.length > 40) { setQuoteStatus("Refresh selected quotes"); return; }
+    if (!ids.length) { setQuoteStatus("No Prime items to price"); return; }
     setQuoteStatus("Refreshing PC prices…");
     try {
-      const result = await api<{ quotes: { itemId: string; quote: Quote | null }[] }>(`/api/quotes?itemIds=${encodeURIComponent(ids.join(","))}&platform=pc&crossplay=false`);
-      setQuotes(Object.fromEntries(result.quotes.map((entry) => [entry.itemId, entry.quote])));
+      const nextQuotes: Record<string, Quote | null> = {};
+      for (let start = 0; start < ids.length; start += 40) {
+        const chunk = ids.slice(start, start + 40);
+        const result = await api<{ quotes: { itemId: string; quote: Quote | null }[] }>(`/api/quotes?itemIds=${encodeURIComponent(chunk.join(","))}&platform=pc&crossplay=false`);
+        for (const entry of result.quotes) nextQuotes[entry.itemId] = entry.quote;
+        setQuotes({ ...nextQuotes });
+        setQuoteStatus(`Refreshing PC prices · ${Math.min(start + chunk.length, ids.length)}/${ids.length}`);
+      }
       setPlan(await api<CraftPlan>("/api/plan"));
       setQuoteStatus(`PC quotes · ${new Date().toLocaleTimeString()}`);
     } catch { setQuoteStatus("Prices unavailable"); }
@@ -75,7 +93,8 @@ function App() {
     setBusy(true);
     try {
       const parsed = JSON.parse(await file.text());
-      await api("/api/import", { method: "POST", body: JSON.stringify(parsed) });
+      const path = Array.isArray(parsed?.entries) ? "/api/import" : "/api/import-companion";
+      await api(path, { method: "POST", body: JSON.stringify(parsed) });
       await refresh();
       setNotice("Inventory imported.");
     } catch (error) { setNotice(error instanceof Error ? error.message : "Import failed."); }
@@ -119,8 +138,8 @@ function App() {
       {page === "Inventory" && <section>
         <div className="page-heading"><div><p className="eyebrow">COLLECTION PLANNER</p><h1>Prime inventory</h1><p className="subheading">Protect what you need. Sort the spare parts.</p></div><div className="heading-actions"><button className="button secondary" onClick={() => void refreshQuotes(snapshot)}>{quoteStatus || "Refresh PC prices"}</button><button className="button primary" onClick={() => setNotice("Companion sync is not connected in this build. Your current snapshot is unchanged.")}>Sync inventory <span>↻</span></button></div></div>
         <div className="summary-strip"><div className="summary-item"><span>Items in snapshot</span><strong>{snapshot.entries.length}</strong></div><div className="summary-item"><span>Protected for collection</span><strong>{plan.items.reduce((sum, item) => sum + item.reserved, 0)}</strong></div><div className="summary-item"><span>Platinum candidates</span><strong>{counts["Sell for platinum"] ?? 0}</strong></div><div className="summary-item"><span>Ducat candidates</span><strong>{counts.Ducats ?? 0}</strong></div></div>
-        <div className="table-toolbar"><div className="filter-tabs">{["All items", "Keep", "Sell for platinum", "Ducats", "Check"].map((item) => <button key={item} className={filter === item ? "selected" : ""} onClick={() => setFilter(item)}>{item}{item !== "All items" && <span>{counts[item] ?? 0}</span>}</button>)}</div><label className="search"><span>⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Find a Prime item"/><kbd>⌘ K</kbd></label></div>
-        <div className="table-wrap"><table><thead><tr><th>ITEM</th><th>OWNED</th><th>RESERVED</th><th>SURPLUS</th><th>SELLER ASK</th><th>BUYER OFFER</th><th>DUCATS</th><th>PLAN</th></tr></thead><tbody>{rows.map((item) => { const quote = quotes[item.id]; return <tr key={item.id} className="item-row" onClick={() => setSelected(item)} tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter") setSelected(item); }}><td><span className={`item-icon ${item.kind}`}>{item.kind === "equipment" ? "◈" : "◆"}</span><span className="item-title"><strong>{item.name}</strong><small>{item.category}{item.mastered ? " · Mastered" : ""}</small></span></td><td>{item.quantity}</td><td className="muted-number">{item.reserved}</td><td className={item.surplus > 0 ? "surplus-number" : "muted-number"}>{item.surplus}</td><td>{quote?.lowestAsk !== undefined && quote.lowestAsk !== null ? `${quote.lowestAsk}p` : item.platinumAsk !== undefined ? `${item.platinumAsk}p` : <span className="no-quote">—</span>}</td><td>{quote?.highestBid !== undefined && quote.highestBid !== null ? `${quote.highestBid}p` : <span className="no-quote">—</span>}</td><td>{item.ducats ?? <span className="no-quote">—</span>}</td><td><span className={`decision ${slug(item.recommendation)}`}>{item.recommendation}</span></td></tr>; })}</tbody></table>{rows.length === 0 && <div className="empty-state">No items match this filter.</div>}</div>
+        <div className="table-toolbar"><div className="filter-tabs">{["All items", "Keep", "Sell for platinum", "Ducats", "Check"].map((item) => <button key={item} className={filter === item ? "selected" : ""} onClick={() => setFilter(item)}>{item}{item !== "All items" && <span>{counts[item] ?? 0}</span>}</button>)}</div><label className="search"><span>⌕</span><input ref={searchRef} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Find a Prime item"/><kbd>Ctrl K</kbd></label></div>
+        <div className="table-wrap"><table><thead><tr><th>ITEM</th><th>OWNED</th><th>RESERVED</th><th>PENDING</th><th>SURPLUS</th><th>SELLER ASK</th><th>BUYER OFFER</th><th>DUCATS</th><th>PLAN</th></tr></thead><tbody>{rows.map((item) => { const quote = quotes[item.id]; return <tr key={item.id} className="item-row" onClick={() => setSelected(item)} tabIndex={0} onKeyDown={(event) => { if (event.key === "Enter") setSelected(item); }}><td><span className={`item-icon ${item.kind}`}>{item.kind === "equipment" ? "◈" : "◆"}</span><span className="item-title"><strong>{item.name}</strong><small>{item.category}{item.mastered ? " · Mastered" : ""}</small></span></td><td>{item.quantity}</td><td className="muted-number">{item.reserved}</td><td className="muted-number">{item.pendingQuantity}</td><td className={item.surplus > 0 ? "surplus-number" : "muted-number"}>{item.surplus}</td><td title={quote?.medianFiveAsks !== null && quote?.medianFiveAsks !== undefined ? `Median of five lowest asks: ${quote.medianFiveAsks}p` : undefined}>{quote?.lowestAsk !== undefined && quote.lowestAsk !== null ? `${quote.lowestAsk}p` : item.platinumAsk !== undefined ? `${item.platinumAsk}p` : <span className="no-quote">—</span>}</td><td>{quote?.highestBid !== undefined && quote.highestBid !== null ? `${quote.highestBid}p` : <span className="no-quote">—</span>}</td><td>{item.ducats ?? <span className="no-quote">—</span>}</td><td><span className={`decision ${slug(item.recommendation)}`}>{item.recommendation}</span></td></tr>; })}</tbody></table>{rows.length === 0 && <div className="empty-state">No items match this filter.</div>}</div>
         <div className="table-foot"><span>Snapshot from {new Date(snapshot.capturedAt).toLocaleString()} · {snapshot.source}</span><button className="text-button" onClick={resetDemo}>Reload demo data</button></div>
       </section>}
 
