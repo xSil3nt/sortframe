@@ -58,19 +58,23 @@ export function parseCompanionInventory(raw: unknown, catalog: CraftData): Snaps
   }
 
   const recipeByOutput = new Map(catalog.recipes.map((recipe) => [recipe.outputId, recipe]));
+  const unresolvedBuilds: NonNullable<Snapshot["unresolvedBuilds"]> = [];
   const pendingBuilds = rows(data.PendingRecipes).flatMap((item) => {
     if (typeof item.ItemType !== "string") return [];
     const direct = recipeByOutput.get(item.ItemType);
-    const blueprintOwner = catalog.recipes.find((recipe) => recipe.ingredients.some((ingredient) => ingredient.reusable && ingredient.id === item.ItemType));
+    const blueprintOwner = catalog.recipes.find((recipe) => recipe.blueprintId === item.ItemType || recipe.ingredients.some((ingredient) => ingredient.reusable && ingredient.id === item.ItemType));
     const output = direct ?? blueprintOwner;
-    if (!output) throw new Error("A pending Foundry item could not be identified. The current inventory was left unchanged.");
     const quantity = Number.isInteger(item.ItemCount) && Number(item.ItemCount) > 0 ? Number(item.ItemCount) : 1;
+    if (!output) {
+      unresolvedBuilds.push({ itemId: item.ItemType, name: known.get(item.ItemType)?.name ?? readableUnknownName(item.ItemType), quantity });
+      return [];
+    }
     return [{ itemId: output.outputId, name: output.outputName, quantity }];
   });
 
   const snapshot = {
     revision: randomUUID(), source: "companion" as const, capturedAt: new Date().toISOString(),
-    entries: [...counts.values()], pendingBuilds
+    entries: [...counts.values()], pendingBuilds, unresolvedBuilds
   };
   const parsed = SnapshotSchema.safeParse(snapshot);
   if (!parsed.success || parsed.data.entries.length === 0) throw new Error("No recognizable Prime inventory entries were found. Your saved inventory was left unchanged.");

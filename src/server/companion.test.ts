@@ -31,6 +31,16 @@ test("unmapped Prime parts are retained for review", () => {
   assert.equal(result.entries[0].category, "Unmapped Prime data");
 });
 
-test("unresolved pending recipes fail closed", () => {
-  assert.throws(() => parseCompanionInventory({ PendingRecipes: [{ ItemType: "/Lotus/Types/Recipes/UnknownPrimeBlueprint" }] }, catalog), /pending Foundry item could not be identified/i);
+test("unresolved Foundry recipes are recorded without inventing future supply or blocking inventory", () => {
+  const result = parseCompanionInventory({ Recipes: [{ ItemType: "part", ItemCount: 3 }], PendingRecipes: [{ ItemType: "/Lotus/Types/Recipes/UnknownPrimeBlueprint" }, { ItemType: "/Lotus/Types/Recipes/FormaBlueprint" }] }, catalog);
+  assert.equal(result.entries[0].quantity, 3);
+  assert.deepEqual(result.pendingBuilds, []);
+  assert.equal(result.unresolvedBuilds?.length, 2);
+});
+
+test("consumable Prime blueprints map pending builds without being marked reusable", () => {
+  const data = { ...catalog, recipes: catalog.recipes.map((recipe) => ({ ...recipe, blueprintId: "bp", ingredients: recipe.ingredients.map((ingredient) => ({ ...ingredient, reusable: false })) })) };
+  const result = parseCompanionInventory({ Recipes: [{ ItemType: "part", ItemCount: 1 }], PendingRecipes: [{ ItemType: "bp" }] }, data);
+  assert.deepEqual(result.pendingBuilds, [{ itemId: "weapon", name: "Test Prime", quantity: 1 }]);
+  assert.deepEqual(result.unresolvedBuilds, []);
 });

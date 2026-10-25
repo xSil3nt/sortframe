@@ -30,6 +30,11 @@ test("one invested Lex and no Aklex reserves two additional Lex recipes", () => 
   assert.equal(plan.recipeAllocations.filter((entry) => entry.destination === "Aklex Prime" && entry.itemId === "barrel").reduce((sum, entry) => sum + entry.quantity, 0), 2);
 });
 
+test("three crafted Lex copies reserve three consumable blueprints", () => {
+  const plan = planCollection(snapshot(lexInventory(0, 0)), lexRecipes, baseSettings);
+  assert.equal(plan.items.find((entry) => entry.id === "blueprint")?.reserved, 3);
+});
+
 test("fresh Lex copies are used for Aklex before loose parts", () => {
   const plan = planCollection(snapshot(lexInventory(3, 0, 1)), lexRecipes, baseSettings);
   assert.equal(plan.recipeAllocations.filter((entry) => entry.destination === "Aklex Prime" && entry.itemId === "lex").reduce((sum, entry) => sum + entry.quantity, 0), 2);

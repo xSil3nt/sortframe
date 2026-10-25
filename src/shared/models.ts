@@ -18,12 +18,14 @@ export const SnapshotSchema = z.object({
   source: z.enum(["demo", "companion", "import"]),
   capturedAt: z.string().datetime(),
   entries: z.array(InventoryEntrySchema),
-  pendingBuilds: z.array(z.object({ itemId: z.string().min(1), name: z.string().min(1), quantity: z.number().int().positive() })).default([])
+  pendingBuilds: z.array(z.object({ itemId: z.string().min(1), name: z.string().min(1), quantity: z.number().int().positive() })).default([]),
+  unresolvedBuilds: z.array(z.object({ itemId: z.string().min(1), name: z.string().min(1), quantity: z.number().int().positive() })).optional()
 });
 
 export const RecipeSchema = z.object({
   outputId: z.string().min(1),
   outputName: z.string().min(1),
+  blueprintId: z.string().min(1).optional(),
   isPrimeEquipment: z.boolean().default(false),
   ingredients: z.array(z.object({ id: z.string().min(1), quantity: z.number().int().positive(), name: z.string().min(1), reusable: z.boolean().default(false) }))
 });

@@ -6,7 +6,7 @@ const gameDataBase = "https://raw.githubusercontent.com/WFCD/warframe-items/mast
 const gearFiles = ["Warframes", "Primary", "Secondary", "Melee", "Sentinels", "SentinelWeapons", "Archwing", "Arch-Gun", "Arch-Melee", "Pets"];
 const ttl = 24 * 60 * 60 * 1000;
 
-type WfcdItem = { uniqueName?: string; name?: string; category?: string; productCategory?: string; isPrime?: boolean; masterable?: boolean; components?: { uniqueName?: string; itemCount?: number }[] };
+type WfcdItem = { uniqueName?: string; name?: string; category?: string; productCategory?: string; isPrime?: boolean; masterable?: boolean; components?: { uniqueName?: string; name?: string; itemCount?: number }[] };
 type MarketItem = { id?: string; slug?: string; gameRef?: string; ducats?: number; tradable?: boolean; i18n?: { en?: { name?: string } } };
 export type CraftData = { items: InventoryEntry[]; recipes: Recipe[]; loadedAt: string; source: "live" | "stale" | "demo" };
 
@@ -25,7 +25,7 @@ function envelopeData<T>(value: unknown, key: string): T {
 
 export async function loadCraftData(fallbackItems: InventoryEntry[], fallbackRecipes: Recipe[], force = false): Promise<CraftData> {
   if (!force && cache && cache.expiresAt > Date.now()) return cache.data;
-  const persisted = readCache<{ expiresAt: number; data: CraftData }>("prime-catalog");
+  const persisted = readCache<{ expiresAt: number; data: CraftData }>("prime-catalog:v2");
   if (!force && !cache && persisted?.expiresAt && persisted.expiresAt > Date.now() && persisted.data.source === "live") {
     cache = persisted;
     return persisted.data;
@@ -58,14 +58,10 @@ export async function loadCraftData(fallbackItems: InventoryEntry[], fallbackRec
       }
       if (!grouped.size) return [];
       const ingredients = [...grouped].map(([id, quantity]) => ({ id, quantity, name: namesByRef.get(id) ?? id, reusable: false }));
-      for (const component of output.components ?? []) {
-        if (!component.uniqueName || !/blueprint/i.test(component.uniqueName) || !marketByRef.has(component.uniqueName)) continue;
-        const blueprint = ingredients.find((item) => item.id === component.uniqueName);
-        if (blueprint) blueprint.reusable = true;
-      }
       return [{
         outputId: output.uniqueName!,
         outputName: output.name!,
+        blueprintId: output.components?.find((component) => component.name === "Blueprint")?.uniqueName,
         isPrimeEquipment: true,
         ingredients
       }];
@@ -73,7 +69,7 @@ export async function loadCraftData(fallbackItems: InventoryEntry[], fallbackRec
     if (!gear.length || !parts.length || !recipes.length) throw new Error("Prime catalog was incomplete");
     const data: CraftData = { items, recipes, loadedAt: new Date().toISOString(), source: "live" };
     cache = { expiresAt: Date.now() + ttl, data };
-    writeCache("prime-catalog", cache);
+    writeCache("prime-catalog:v2", cache);
     return data;
   } catch {
     if (cache) {
