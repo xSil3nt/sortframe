@@ -147,6 +147,7 @@ async function startDesktop() {
     const target = new URL(request.url);
     const initiatorOrigin = (request as Request & { initiatorOrigin?: string }).initiatorOrigin;
     if (target.protocol !== "sortframe:" || target.hostname !== "app" || target.port || (initiatorOrigin && initiatorOrigin !== appOrigin)) return new Response("Forbidden", { status: 403 });
+    if (target.pathname === "/api/desktop/info" && request.method === "GET") return Response.json({ version: app.getVersion() });
     if (target.pathname === "/api/warframe/connection" && request.method === "GET") return Response.json({ remembered: steamRemembered, canRemember: steamProtectionAvailable });
     if (target.pathname === "/api/warframe/disconnect" && request.method === "POST") {
       steamAuthEpoch++;
@@ -184,7 +185,7 @@ async function startDesktop() {
     } catch { return new Response("Not found", { status: 404 }); }
   });
   Menu.setApplicationMenu(null);
-  mainWindow = new BrowserWindow({ title: "Sortframe", icon: join(webRoot, "sortframe.png"), width: 1400, height: 900, minWidth: 900, minHeight: 620, backgroundColor: "#101412", titleBarStyle: "hidden", titleBarOverlay: { color: "#141a16", symbolColor: "#b8c0b9", height: 36 }, show: false, webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, webSecurity: true } });
+  mainWindow = new BrowserWindow({ title: `Sortframe ${app.getVersion()}`, icon: join(webRoot, "sortframe.png"), width: 1400, height: 900, minWidth: 900, minHeight: 620, backgroundColor: "#101412", titleBarStyle: "hidden", titleBarOverlay: { color: "#141a16", symbolColor: "#b8c0b9", height: 36 }, show: false, webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, webSecurity: true } });
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   mainWindow.webContents.on("will-navigate", (event, url) => { if (!url.startsWith(appOrigin + "/")) event.preventDefault(); });
   mainWindow.once("ready-to-show", () => mainWindow?.show());

@@ -1,6 +1,6 @@
 {
   "name": "sortframe",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "main": "dist/desktop/main.js",
   "author": "xSil3nt",
   "private": true,

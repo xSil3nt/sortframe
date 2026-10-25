@@ -21,6 +21,7 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 function App() {
+  const [version, setVersion] = useState("");
   const [page, setPage] = useState<Page>("Inventory");
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [plan, setPlan] = useState<CraftPlan | null>(null);
@@ -50,6 +51,7 @@ function App() {
   }, []);
 
   useEffect(() => { refresh().catch((error) => setNotice(error.message)); }, [refresh]);
+  useEffect(() => { api<{ version: string }>("/api/desktop/info").then((info) => setVersion(info.version)).catch(() => undefined); }, []);
   useEffect(() => { api<MarketStatus>("/api/market/status").then(setMarket).catch(() => undefined); }, []);
   useEffect(() => { api<WarframeConnection>("/api/warframe/connection").then(setWarframe).catch(() => undefined); }, []);
   useEffect(() => {
@@ -205,7 +207,7 @@ function App() {
   if (!snapshot || !plan || !settings) return <main className="loading">{notice || "Loading inventory…"}</main>;
 
   return <div className="app-shell">
-    <div className="desktop-titlebar"><span>Sortframe</span><small>Prime collection planner</small></div>
+    <div className="desktop-titlebar"><span>Sortframe {version}</span></div>
     <aside className="sidebar">
       <a className="brand" href="#inventory" aria-label="Sortframe home"><span className="brand-mark">S</span><span>Sortframe</span></a>
       <nav aria-label="Main navigation">
