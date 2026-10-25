@@ -79,6 +79,8 @@ async function postCompanion(endpoint: string, query: URLSearchParams, payload: 
   let value: unknown;
   try { value = JSON.parse(text); } catch { throw new Error("Warframe returned an unreadable companion response."); }
   if (!response.ok || !value || typeof value !== "object" || Array.isArray(value)) throw new Error("Warframe companion sign in or inventory request failed.");
+  const detail = (value as Record<string, unknown>).Error ?? (value as Record<string, unknown>).error ?? (value as Record<string, unknown>).message;
+  if (typeof detail === "string" && /active|already.*session|another.*login/i.test(detail)) throw new Error("Warframe reports an active session conflict. Sortframe did not disconnect the game; close it normally and retry.");
   return value as Record<string, unknown>;
 }
 
