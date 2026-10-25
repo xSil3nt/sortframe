@@ -40,8 +40,12 @@ try {
   assert.equal(exported.source, "demo");
   await window.getByRole("button", { name: /Settings/ }).click();
   await window.getByRole("heading", { name: "Settings", exact: true }).waitFor();
-  await desktop.context().route("https://steamcommunity.com/**", (route) => route.fulfill({ headers: { "content-type": "text/html", "content-disposition": 'attachment; filename="auth.html"' }, body: "<title>Steam window test</title>" }));
+  let attachmentResponse = true;
+  await desktop.context().route("https://steamcommunity.com/**", (route) => route.fulfill({ headers: { "content-type": "text/html", ...(attachmentResponse ? { "content-disposition": 'attachment; filename="auth.html"' } : {}) }, body: "<title>Steam window test</title>" }));
   await desktop.evaluate(() => { globalThis.fetch = async () => new Response("{}", { status: 503 }); });
+  await window.getByRole("button", { name: "Connect with Steam", exact: true }).click();
+  await window.waitForFunction(() => document.querySelector('[role="status"]')?.textContent?.includes("unexpected authentication download"));
+  attachmentResponse = false;
   const authEvent = desktop.waitForEvent("window");
   await window.getByRole("button", { name: "Connect with Steam", exact: true }).click();
   const steam = await authEvent;
