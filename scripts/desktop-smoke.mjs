@@ -23,6 +23,12 @@ try {
   const snapshot = await window.evaluate(async () => (await fetch("/api/snapshot")).json());
   assert.equal(snapshot.source, "demo");
   assert.equal(snapshot.entries.length, 16);
+  const protection = await desktop.evaluate(async ({ safeStorage }) => {
+    if (!await safeStorage.isAsyncEncryptionAvailable()) return { available: false };
+    const encrypted = await safeStorage.encryptStringAsync("synthetic-protection-check");
+    return { available: true, hidden: !encrypted.includes(Buffer.from("synthetic-protection-check")), roundTrip: (await safeStorage.decryptStringAsync(encrypted)).result === "synthetic-protection-check" };
+  });
+  assert.deepEqual(protection, { available: true, hidden: true, roundTrip: true });
   await window.getByText("Lex Prime", { exact: true }).click();
   await window.getByRole("dialog").waitFor();
   await window.getByRole("button", { name: "Close", exact: true }).click();
@@ -43,6 +49,22 @@ try {
   await desktop.evaluate(({ BrowserWindow }) => { for (const child of BrowserWindow.getAllWindows()) if (child.webContents.getURL().startsWith("https://steamcommunity.com/")) child.destroy(); });
   await window.waitForFunction(() => document.querySelector('[role="status"]')?.textContent?.includes("cancelled"));
   assert.equal(await window.getByRole("button", { name: "Connect with Steam", exact: true }).isEnabled(), true);
+  const rememberedAuthEvent = desktop.waitForEvent("window");
+  await window.getByRole("button", { name: "Connect with Steam", exact: true }).click();
+  const rememberedAuth = await rememberedAuthEvent;
+  await rememberedAuth.waitForURL(/^https:\/\/steamcommunity\.com\//);
+  const attempt = new URL(rememberedAuth.url()).searchParams.get("state");
+  await desktop.evaluate(async ({ BrowserWindow }) => {
+    const child = BrowserWindow.getAllWindows().find((entry) => entry.webContents.getURL().startsWith("https://steamcommunity.com/"));
+    await child.webContents.session.cookies.set({ url: "https://steamcommunity.com/", name: "steamLoginSecure", value: "synthetic-remembered-cookie", secure: true, httpOnly: true, expirationDate: Date.now() / 1000 + 600 });
+  });
+  await rememberedAuth.evaluate((url) => { location.href = url; }, `https://mobile.warframe.com/api/mobileSteamAuth.php?state=${encodeURIComponent(attempt)}&code=synthetic-callback`).catch(() => undefined);
+  await window.getByRole("button", { name: "Disconnect Steam", exact: true }).waitFor();
+  const protectedSession = await readFile(join(temporary, "data", "steam-session.enc"));
+  assert.equal(protectedSession.includes(Buffer.from("synthetic-remembered-cookie")), false);
+  await window.getByRole("button", { name: "Disconnect Steam", exact: true }).click();
+  await window.getByRole("button", { name: "Connect with Steam", exact: true }).waitFor();
+  await assert.rejects(readFile(join(temporary, "data", "steam-session.enc")), { code: "ENOENT" });
   await window.getByRole("button", { name: /Inventory/ }).click();
   await window.screenshot({ path: resolve("work", "desktop-smoke.png") });
   assert.deepEqual(errors, []);
@@ -50,7 +72,7 @@ try {
   await window.getByRole("button", { name: "Quit Sortframe", exact: true }).click();
   await closed;
   exited = true;
-  console.log("Desktop smoke passed: isolated renderer, demo plan, export, Steam window, cancellation, and quit.");
+  console.log("Desktop smoke passed: renderer isolation, demo, export, Steam cancellation, protected session saving, disconnect, and quit.");
 } finally {
   if (!exited) desktop.process().kill();
 }

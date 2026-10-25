@@ -6,7 +6,7 @@ Sortframe is a Windows desktop app for planning a Prime collection and sorting s
 
 The app uses Electron with a sandboxed React interface. Inventory, recipes, prices, and marketplace sessions run inside the desktop process. It does not open a browser tab, listen on a local HTTP port, or require WebView2, .NET, Node.js, Python, or Git on the user's computer.
 
-Steam sign-in opens an isolated child window on Steam's official website. The current login attempt's callback is checked before its code reaches the companion exchange. Closing the window cancels the attempt and clears its temporary browser session. There is no separate authentication helper.
+Steam sign-in opens an isolated child window on Steam's official website. The current login attempt's callback is checked before its code reaches the companion exchange. The signed-in Steam session is remembered using Windows-protected encryption and restored for later syncs. Steam can require sign-in or confirmation again when the session expires. Settings includes Disconnect Steam to remove it. There is no separate authentication helper.
 
 ## Current features
 
@@ -46,13 +46,15 @@ npm run package:win
 
 ## Local data
 
-The database remains in `%LOCALAPPDATA%\Sortframe`, including data created by the earlier browser prototype. Installed application files and account data are separate. Uninstalling preserves data. Credentials are not logged or saved; the marketplace token lives only in memory until disconnect or exit. The inventory export contains personal inventory data, so review it before sharing.
+The database remains in `%LOCALAPPDATA%\Sortframe`, including data created by the earlier browser prototype. Installed application files and account data are separate. Uninstalling preserves data. Passwords are not retained. Remembered Steam session data is encrypted with Windows-protected storage; no plaintext fallback is used when protection is unavailable. The marketplace token lives only in memory until disconnect or exit. The inventory export contains personal inventory data, so review it before sharing.
 
 ## Release validation
 
 CI builds and tests the desktop source. The manual Windows workflow builds an installer, a portable ZIP, and SHA-256 checksums. Public release publication remains disabled until a clean Windows account can install, authenticate, sync its own inventory, understand the reserves, and publish a reviewed listing batch without developer assistance.
 
-The desktop smoke check uses synthetic data to verify the renderer boundary, reserve drawer, native export, Steam window creation, cancellation, and quitting. It stubs account and metadata network traffic; it does not prove live account access.
+The desktop smoke check uses synthetic data to verify the renderer boundary, reserve drawer, native export, Steam window creation, cancellation, protected session saving, disconnect, and quitting. It stubs account and metadata network traffic; it does not prove live account access.
+
+Unmapped Foundry builds are preserved as warnings without being credited as future inventory. This can reserve extra parts, while allowing the known inventory to sync. Pending Prime blueprints are mapped separately from the rule for reusable recipe ingredients; Prime blueprints remain consumable.
 
 ## Future overlay
 

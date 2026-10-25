@@ -1,9 +1,12 @@
-import { app, BrowserWindow, dialog, Menu, protocol, session } from "electron";
+import { app, BrowserWindow, dialog, Menu, protocol, safeStorage, session } from "electron";
 import { readFile, writeFile } from "node:fs/promises";
 import { dirname, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
+import { homedir } from "node:os";
 import { isAbortedNavigation, parseSteamCallback } from "./steam-callback.js";
+import { createProtectedStore } from "./protected-store.js";
+import { hasSteamLogin, selectSteamCookies, steamCookieDetails, type StoredSteamCookie } from "./steam-cookies.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const appOrigin = "sortframe://app";
@@ -12,20 +15,30 @@ let mainWindow: BrowserWindow | null = null;
 let authWindow: BrowserWindow | null = null;
 let closeBackend: (() => Promise<void>) | undefined;
 let shuttingDown = false;
+let steamVault: ReturnType<typeof createProtectedStore>;
+let steamCookies: StoredSteamCookie[] = [];
+let steamRemembered = false;
+let steamProtectionAvailable = false;
+let steamAuthEpoch = 0;
+let steamAuthInProgress = false;
 if (process.env.SORTFRAME_PROFILE_DIR) app.setPath("userData", resolve(process.env.SORTFRAME_PROFILE_DIR));
 
 protocol.registerSchemesAsPrivileged([{ scheme: "sortframe", privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
 
 async function authenticateSteam(): Promise<string> {
-  if (authWindow && !authWindow.isDestroyed()) {
-    authWindow.focus();
+  if (steamAuthInProgress) {
+    authWindow?.focus();
     throw new Error("Steam sign in is already open. Finish or close that window first.");
   }
+  steamAuthInProgress = true;
+  try {
   const state = randomUUID();
+  const epoch = steamAuthEpoch;
   const authSession = session.fromPartition(`sortframe-steam-${state}`);
   authSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
-  return new Promise<string>((resolveCode, reject) => {
-    const window = new BrowserWindow({ title: "Steam — steamcommunity.com", width: 560, height: 760, minWidth: 460, minHeight: 600, parent: mainWindow ?? undefined, autoHideMenuBar: true, backgroundColor: "#171d19", webPreferences: { session: authSession, sandbox: true, contextIsolation: true, nodeIntegration: false, webSecurity: true } });
+  await Promise.allSettled(steamCookies.map((cookie) => authSession.cookies.set(steamCookieDetails(cookie))));
+  return await new Promise<string>((resolveCode, reject) => {
+    const window = new BrowserWindow({ title: "Steam — steamcommunity.com", width: 560, height: 760, minWidth: 460, minHeight: 600, parent: mainWindow ?? undefined, autoHideMenuBar: true, show: !hasSteamLogin(steamCookies), backgroundColor: "#171d19", webPreferences: { session: authSession, sandbox: true, contextIsolation: true, nodeIntegration: false, webSecurity: true } });
     authWindow = window;
     let settled = false;
     const timer = setTimeout(() => finish(undefined, "Steam sign in timed out. Try again."), 180000);
@@ -33,8 +46,24 @@ async function authenticateSteam(): Promise<string> {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      if (code) resolveCode(code); else reject(new Error(message));
-      if (!window.isDestroyed()) window.destroy();
+      void (async () => {
+        if (code && epoch === steamAuthEpoch) {
+          try {
+            const cookies = selectSteamCookies(await authSession.cookies.get({}));
+            if (hasSteamLogin(cookies)) {
+              const saved = await steamVault.save(cookies);
+              if (epoch === steamAuthEpoch) { steamCookies = cookies; steamRemembered = saved; }
+              else await steamVault.clear();
+            }
+          } catch { steamRemembered = false; }
+        }
+        if (epoch !== steamAuthEpoch) reject(new Error("Steam sign in was disconnected."));
+        else if (code) resolveCode(code);
+        else reject(new Error(message));
+        if (!window.isDestroyed()) window.destroy();
+        await authSession.clearStorageData().catch(() => undefined);
+        await authSession.clearCache().catch(() => undefined);
+      })();
     };
     const navigate = (event: { preventDefault: () => void }, url: string) => {
       let target: URL;
@@ -58,8 +87,9 @@ async function authenticateSteam(): Promise<string> {
     window.on("closed", () => {
       if (authWindow === window) authWindow = null;
       finish();
-      void authSession.clearStorageData().catch(() => undefined);
-      void authSession.clearCache().catch(() => undefined);
+    });
+    window.webContents.on("did-finish-load", () => {
+      setTimeout(() => { if (!settled && !window.isDestroyed()) window.show(); }, 600);
     });
     window.webContents.on("did-fail-load", (_event, code, _description, _url, isMainFrame) => {
       if (isMainFrame && code !== -3) finish(undefined, `Steam's sign-in page could not load (network error ${code}). Check your connection and retry.`);
@@ -73,9 +103,19 @@ async function authenticateSteam(): Promise<string> {
       finish(undefined, `Steam's sign-in page could not open${networkCode ? ` (${networkCode})` : ""}. Check your connection and retry.`);
     });
   });
+  } finally { steamAuthInProgress = false; }
 }
 
 async function startDesktop() {
+  const dataRoot = process.env.SORTFRAME_DATA_DIR ?? join(process.env.LOCALAPPDATA ?? join(homedir(), "AppData", "Local"), "Sortframe");
+  steamProtectionAvailable = process.platform === "win32" && await safeStorage.isAsyncEncryptionAvailable().catch(() => false);
+  steamVault = createProtectedStore(join(dataRoot, "steam-session.enc"), {
+    available: async () => steamProtectionAvailable,
+    encrypt: (plain) => safeStorage.encryptStringAsync(plain),
+    decrypt: async (bytes) => (await safeStorage.decryptStringAsync(bytes)).result
+  });
+  steamCookies = selectSteamCookies(await steamVault.load());
+  steamRemembered = hasSteamLogin(steamCookies);
   const backend = await import("../server/index.js");
   closeBackend = backend.closeBackend;
   backend.setSteamAuthenticator(authenticateSteam);
@@ -86,6 +126,15 @@ async function startDesktop() {
     const target = new URL(request.url);
     const initiatorOrigin = (request as Request & { initiatorOrigin?: string }).initiatorOrigin;
     if (target.protocol !== "sortframe:" || target.hostname !== "app" || target.port || (initiatorOrigin && initiatorOrigin !== appOrigin)) return new Response("Forbidden", { status: 403 });
+    if (target.pathname === "/api/warframe/connection" && request.method === "GET") return Response.json({ remembered: steamRemembered, canRemember: steamProtectionAvailable });
+    if (target.pathname === "/api/warframe/disconnect" && request.method === "POST") {
+      steamAuthEpoch++;
+      steamCookies = [];
+      steamRemembered = false;
+      authWindow?.destroy();
+      await steamVault.clear();
+      return Response.json({ remembered: false, canRemember: steamProtectionAvailable });
+    }
     if (target.pathname === "/api/desktop/export" && request.method === "POST") {
       const destination = await dialog.showSaveDialog(mainWindow!, { title: "Export inventory", defaultPath: join(app.getPath("documents"), "sortframe-snapshot.json"), filters: [{ name: "Inventory JSON", extensions: ["json"] }] });
       if (destination.canceled || !destination.filePath) return Response.json({ saved: false });
