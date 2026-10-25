@@ -11,11 +11,11 @@ const temporary = await mkdtemp(resolve("work", "desktop-check-"));
 const packaged = process.argv[2] ? resolve(process.argv[2]) : null;
 const environment = { ...process.env, SORTFRAME_DATA_DIR: join(temporary, "data"), SORTFRAME_PROFILE_DIR: join(temporary, "profile") };
 delete environment.ELECTRON_RUN_AS_NODE;
-const desktop = await _electron.launch({ executablePath: packaged ?? require("electron"), args: packaged ? [] : ["."], env: environment, cwd: process.cwd(), timeout: 30000, chromiumSandbox: true });
+let desktop = await _electron.launch({ executablePath: packaged ?? require("electron"), args: packaged ? [] : ["."], env: environment, cwd: process.cwd(), timeout: 30000, chromiumSandbox: true });
 let exited = false;
 let attachmentServer;
 try {
-  const window = await desktop.firstWindow();
+  let window = await desktop.firstWindow();
   window.setDefaultTimeout(15000);
   const errors = [];
   window.on("pageerror", (error) => errors.push(error.message));
@@ -74,6 +74,16 @@ try {
   await window.getByRole("button", { name: "Disconnect Steam", exact: true }).waitFor();
   const protectedSession = await readFile(join(temporary, "data", "steam-session.enc"));
   assert.equal(protectedSession.includes(Buffer.from("synthetic-remembered-cookie")), false);
+  const restarted = desktop.waitForEvent("close", { timeout: 15000 });
+  await window.getByRole("button", { name: "Quit Sortframe", exact: true }).click();
+  await restarted;
+  desktop = await _electron.launch({ executablePath: packaged ?? require("electron"), args: packaged ? [] : ["."], env: environment, cwd: process.cwd(), timeout: 30000, chromiumSandbox: true });
+  window = await desktop.firstWindow();
+  window.setDefaultTimeout(15000);
+  await window.getByRole("heading", { name: "Prime inventory", exact: true }).waitFor();
+  const restored = await window.evaluate(async () => (await fetch("/api/warframe/connection")).json());
+  assert.equal(restored.remembered, true);
+  await window.getByRole("button", { name: /Settings/ }).click();
   await window.getByRole("button", { name: "Disconnect Steam", exact: true }).click();
   await window.getByRole("button", { name: "Connect with Steam", exact: true }).waitFor();
   await assert.rejects(readFile(join(temporary, "data", "steam-session.enc")), { code: "ENOENT" });
@@ -84,7 +94,7 @@ try {
   await window.getByRole("button", { name: "Quit Sortframe", exact: true }).click();
   await closed;
   exited = true;
-  console.log("Desktop smoke passed: renderer isolation, demo, export, Steam cancellation, protected session saving, disconnect, and quit.");
+  console.log("Desktop smoke passed: renderer isolation, demo, export, Steam cancellation, protected session saving across restart, disconnect, and quit.");
 } finally {
   if (attachmentServer?.listening) await new Promise((closed) => attachmentServer.close(closed));
   if (!exited) desktop.process().kill();
