@@ -44,7 +44,7 @@ try {
   await desktop.context().route("https://steamcommunity.com/**", (route) => route.fulfill({ headers: { "content-type": "text/html", ...(attachmentResponse ? { "content-disposition": 'attachment; filename="auth.html"' } : {}) }, body: "<title>Steam window test</title>" }));
   await desktop.evaluate(() => { globalThis.fetch = async () => new Response("{}", { status: 503 }); });
   await window.getByRole("button", { name: "Connect with Steam", exact: true }).click();
-  await window.waitForFunction(() => document.querySelector('[role="status"]')?.textContent?.includes("unexpected authentication download"));
+  await window.waitForFunction(() => document.querySelector('[role="status"]')?.textContent?.includes("unexpected authentication download")).catch(async (error) => { console.error(await window.getByRole("status").allTextContents()); throw error; });
   attachmentResponse = false;
   const authEvent = desktop.waitForEvent("window");
   await window.getByRole("button", { name: "Connect with Steam", exact: true }).click();

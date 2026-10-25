@@ -82,8 +82,10 @@ async function authenticateSteam(): Promise<string> {
       if (!allowed) event.preventDefault();
     };
     authSession.on("will-download", (event, item) => {
+      let urls: string[] = [];
+      try { urls = [...item.getURLChain(), item.getURL()]; } catch { }
       event.preventDefault();
-      for (const url of [...item.getURLChain(), item.getURL()]) {
+      for (const url of urls) {
         const callback = parseSteamCallback(url, state);
         if (callback.kind === "complete") { finish(callback.code); return; }
       }
