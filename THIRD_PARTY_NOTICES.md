@@ -1,15 +1,9 @@
 # Third-party notices
 
-## WFCD/warframe-items
+Sortframe source is MIT licensed. The desktop runtime is Electron, distributed under the MIT license with bundled Chromium and Node.js components. Packaged distributions include Electron's LICENSE.electron.txt and LICENSES.chromium.html. Each bundled npm dependency retains its own package license.
 
-The app fetches canonical Warframe item names, identifiers, and crafting metadata from [WFCD/warframe-items](https://github.com/WFCD/warframe-items). That project declares the MIT license. Its license notice must accompany any redistributed catalog data.
+Prime recipe and identifier metadata is fetched from WFCD/warframe-items, an MIT licensed project. The demo is synthetic; the repository does not redistribute recovered proprietary source, real account data, or APK contents.
 
-No WFCD catalog files are bundled in the current demo build.
+Marketplace metadata and orders use warframe.market's API. Current API documentation and integration rules are at https://docs.warframe.market/docs/intro/. Authenticated listing changes require an explicit user review.
 
-## warframe.market
-
-The app reads public item metadata and orders from the warframe.market API. API terms and current integration documentation are at [docs.warframe.market](https://docs.warframe.market/docs/intro/). The app does not currently sign in or create orders.
-
-## Runtime and packages
-
-The release workflow bundles the Node.js runtime and the npm production dependencies listed in `package-lock.json`. Their individual license texts are available in the installed package metadata and the Node.js distribution. A generated, complete dependency license bundle is required before a public binary release.
+Before publishing a public binary release, inspect the packaged runtime and dependency license files and finish the live account and clean-user release checks described in README.md.

@@ -1,61 +1,65 @@
 # Sortframe
 
-Sortframe plans which Prime parts to keep for crafting, which surplus parts may be worth selling, and which can go to Baro for Ducats. Inventory decisions are suggestions. Sortframe never consumes items in game.
+Sortframe is a Windows desktop app for planning a Prime collection and sorting surplus into platinum listings, ducats, or review. It never consumes items in Warframe.
 
-The project is early development. The reserve planner, live Prime catalog, public prices, and synthetic demo work locally. A Windows Steam sign-in window and companion sync path are implemented, but they have not been validated against a live Warframe account. Warframe email login is not implemented. Marketplace email sign-in, order review, and order create/edit routes are implemented against the documented API, but have not been validated with a live account. No installer or portable release is published until the live account flows and a fresh-user install have been validated.
+## Desktop build
 
-## Current build
+The app uses Electron with a sandboxed React interface. Inventory, recipes, prices, and marketplace sessions run inside the desktop process. It does not open a browser tab, listen on a local HTTP port, or require WebView2, .NET, Node.js, Python, or Git on the user's computer.
 
-- React interface with Inventory, Listings, and Settings pages.
-- Complete collection and mastery-only planning modes.
-- Investment and user locks count toward collection targets.
-- Dual-wield duplicate weapons and repeated recipe ingredients are aggregated.
-- Live Prime equipment recipes from WFCD and Prime part identifiers from the public warframe.market v2 catalog.
-- PC-only warframe.market order-book quotes with 24-hour metadata and five-minute quote caches, using a two-request-per-second queue.
-- Session-only warframe.market email sign-in through the local backend. The JWT stays in process memory and is not sent to the browser or written to disk.
-- Listing review for selected platinum surplus, with refreshed quotes, existing-order reconciliation, collection revision checks, single-use review drafts, and explicit create/edit choices.
-- Import of a companion inventory JSON response, including mastery, invested copies, and recognized pending builds.
-- Packaged Windows Steam sign-in through a WebView2 window and companion inventory sync, with no game disconnect request and no persisted companion session. This flow still needs live account validation.
-- Per-user SQLite database in the Windows local application data directory.
-- Synthetic demo inventory, validated JSON import/export, and protected snapshots.
-- Loopback-only local server with origin checks on write requests.
-- Windows launcher and release packaging workflow source.
+Steam sign-in opens an isolated child window on Steam's official website. The current login attempt's callback is checked before its code reaches the companion exchange. Closing the window cancels the attempt and clears its temporary browser session. There is no separate authentication helper.
 
-The current demo shows the Lex/Aklex, Vasto/Akvasto, and Afuris duplicate-part examples. It is synthetic and does not contain a real inventory snapshot. Live crafting metadata is fetched from WFCD and warframe.market when a real inventory is imported. If these sources are unavailable, all imported inventory is held for review.
+## Current features
 
-## Development
+- Inventory table with Keep, Sell for platinum, Ducats, and Check decisions.
+- One complete Prime collection by default, with mastery mode, targets, exclusions, and investment locks.
+- Duplicate weapon and repeated ingredient planning, including Lex/Aklex, Vasto/Akvasto, and Afuris.
+- WFCD recipes and exact warframe.market item mappings, with public PC quotes.
+- Companion JSON import/export and a synthetic demo.
+- Steam companion inventory sync and session-only marketplace email sign-in.
+- Explicit listing review with refreshed quotes, existing orders, collection revision checks, and single-use submission drafts.
+- Windows installer and portable ZIP build targets, with a bundled runtime.
 
-Requirements: Node.js 24 and npm.
+Live Steam companion sync and marketplace publishing still require real account validation in the desktop app. Warframe email/password login is not implemented. Do not treat mocked API checks as live account proof.
+
+## Try it from source
+
+Development needs Node.js 24 and npm. Install dependencies, build, then open the desktop app:
 
 ```powershell
 npm ci
+node node_modules/electron/install.js
 npm run dev
 ```
 
-Open the local Vite address printed by the development server. The frontend proxies API calls to the local Fastify service. Run the checks with:
+Other commands:
 
 ```powershell
-npm run typecheck
 npm test
+npm run typecheck
 npm run build
+npm run test:desktop
+npm run package:dir
+npm run package:win
 ```
 
-## Data and privacy
+`package:dir` creates an unpacked application in `release/win-unpacked`. `package:win` creates the installer and portable ZIP in `release`. Friends will use those downloads; they do not need the development commands.
 
-The local server binds to `127.0.0.1`. The production launcher stores the database in `%LOCALAPPDATA%\Sortframe`; portable builds use the same per-user location. App files and user data are kept separately. The JSON export contains the current snapshot, so review it before sharing.
+## Local data
 
-The current Windows Steam flow does not ask for a Warframe password. It opens Steam's sign-in page in a temporary WebView2 profile, hands the returned code to the local service over a per-attempt named pipe, and discards the profile afterward. The companion request and inventory parsing still need live account validation. Warframe email login is not implemented.
+The database remains in `%LOCALAPPDATA%\Sortframe`, including data created by the earlier browser prototype. Installed application files and account data are separate. Uninstalling preserves data. Credentials are not logged or saved; the marketplace token lives only in memory until disconnect or exit. The inventory export contains personal inventory data, so review it before sharing.
 
-warframe.market email and password are sent over HTTPS from the local backend for sign-in and then cleared. The resulting session token is held only in memory and is cleared when disconnected or Sortframe exits. Publishing requires an account that warframe.market marks verified. Sortframe does not automatically reprice, hide, or delete orders. These authenticated flows still need live account validation; no real account credentials are included in this repository.
+## Release validation
 
-## Distribution
+CI builds and tests the desktop source. The manual Windows workflow builds an installer, a portable ZIP, and SHA-256 checksums. Public release publication remains disabled until a clean Windows account can install, authenticate, sync its own inventory, understand the reserves, and publish a reviewed listing batch without developer assistance.
 
-The Windows x64 workflow packages a bundled Node runtime, a self-contained launcher, an installer, and a portable ZIP. Release publication requires a deliberate manual run on a `v*` tag with the publish input enabled. Keep that input off until Steam companion sync, marketplace sign-in and reviewed publishing pass against live accounts, and a clean Windows account can install or extract the app, connect its own accounts, sync inventory, inspect reserve explanations, and publish a reviewed order batch.
+The desktop smoke check uses synthetic data to verify the renderer boundary, reserve drawer, native export, Steam window creation, cancellation, and quitting. It stubs account and metadata network traffic; it does not prove live account access.
 
-## Third-party data
+## Future overlay
 
-Prime item and recipe metadata comes from [WFCD/warframe-items](https://github.com/WFCD/warframe-items), distributed under the MIT license, and is cached locally. Public market prices come from the warframe.market API. The current demo inventory is synthetic. Sortframe is an independent community project and is not affiliated with Digital Extremes, Warframe, Steam, or warframe.market.
+A game overlay is future work. The first candidate is a separate transparent desktop window with a hotkey and optional click-through behavior. It would show data from the last explicitly synced snapshot. Game process injection, memory reading, automatic trading, and automatic in-game item consumption are outside this design. Fullscreen compatibility, display scaling, focus behavior, and Digital Extremes' current guidance need checking before committing to an overlay implementation.
 
-## License
+## Credits and license
 
-Sortframe source is released under the MIT license. See [LICENSE](LICENSE).
+Prime metadata comes from [WFCD/warframe-items](https://github.com/WFCD/warframe-items). Marketplace data comes from [warframe.market](https://warframe.market). Sortframe is an independent community project, unaffiliated with Digital Extremes, Warframe, Steam, or warframe.market.
+
+Source is MIT licensed. See [LICENSE](LICENSE) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
