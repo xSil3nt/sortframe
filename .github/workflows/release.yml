@@ -32,6 +32,7 @@ jobs:
       - run: choco install innosetup --yes --no-progress
       - shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
           $stage = Join-Path $env:GITHUB_WORKSPACE 'stage'
           $release = Join-Path $env:GITHUB_WORKSPACE 'release'
           New-Item -ItemType Directory -Force -Path "$stage\app\dist\server", "$stage\app\dist\web", "$stage\app\node_modules", "$stage\runtime", $release | Out-Null
@@ -45,7 +46,9 @@ jobs:
           $nodeSum = (($sums -split "`n" | Where-Object { $_ -match 'win-x64/node.exe\s*$' } | Select-Object -First 1) -split '\s+')[0]
           if (-not $nodeSum -or (Get-FileHash "$stage\runtime\node.exe" -Algorithm SHA256).Hash.ToLower() -ne $nodeSum.ToLower()) { throw 'Node.js runtime checksum validation failed.' }
           dotnet publish 'launcher\Sortframe.csproj' -c Release -o "$stage" --self-contained true -r win-x64
+          if ($LASTEXITCODE -ne 0) { throw 'Sortframe launcher build failed.' }
           & 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' "/O$release" 'installer\sortframe.iss'
+          if ($LASTEXITCODE -ne 0) { throw 'Sortframe installer build failed.' }
           Compress-Archive -Path "$stage\*" -DestinationPath "$release\Sortframe-Portable-x64.zip" -Force
           Get-FileHash "$release\Sortframe-Setup-0.1.0-x64.exe","$release\Sortframe-Portable-x64.zip" -Algorithm SHA256 | ForEach-Object { "$($_.Hash)  $([IO.Path]::GetFileName($_.Path))" } | Set-Content "$release\SHA256SUMS.txt"
       - uses: softprops/action-gh-release@v2
