@@ -3,7 +3,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { dirname, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
-import { parseSteamCallback } from "./steam-callback.js";
+import { isAbortedNavigation, parseSteamCallback } from "./steam-callback.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const appOrigin = "sortframe://app";
@@ -62,11 +62,16 @@ async function authenticateSteam(): Promise<string> {
       void authSession.clearCache().catch(() => undefined);
     });
     window.webContents.on("did-fail-load", (_event, code, _description, _url, isMainFrame) => {
-      if (isMainFrame && code !== -3) finish(undefined, "Steam's sign-in page could not load. Check your connection and retry.");
+      if (isMainFrame && code !== -3) finish(undefined, `Steam's sign-in page could not load (network error ${code}). Check your connection and retry.`);
     });
     const url = new URL("https://steamcommunity.com/oauth/login");
     url.search = new URLSearchParams({ client_id: "A1182243", redirect_uri: "https://mobile.warframe.com/api/mobileSteamAuth.php", response_type: "code", mobileminimal: "1", state }).toString();
-    void window.loadURL(url.href).catch(() => finish(undefined, "Steam's sign-in page could not open. Check your connection and retry."));
+    void window.loadURL(url.href).catch((error: unknown) => {
+      if (isAbortedNavigation(error)) return;
+      const message = error instanceof Error ? error.message : "";
+      const networkCode = message.match(/\bERR_[A-Z_]+\b/)?.[0];
+      finish(undefined, `Steam's sign-in page could not open${networkCode ? ` (${networkCode})` : ""}. Check your connection and retry.`);
+    });
   });
 }
 
