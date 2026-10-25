@@ -115,7 +115,7 @@ export function planCollection(snapshot: Snapshot, recipes: Recipe[], settings: 
     if (missingUnsupportedTarget) warnings.push("Collection recipe is missing; held for review.");
     let recommendation: PlannedItem["recommendation"] = "Keep";
     if (isUnmappedPart || missingUnsupportedTarget) recommendation = "Check";
-    else if (surplus > 0 && entry.ducats === undefined && entry.platinumAsk === undefined) recommendation = "Check";
+    else if (surplus > 0 && entry.platinumAsk === undefined) recommendation = "Check";
     else if (surplus > 0 && (entry.platinumAsk ?? 0) >= settings.platinumThreshold) recommendation = "Sell for platinum";
     else if (surplus > 0 && entry.ducats !== undefined) recommendation = "Ducats";
     else if (surplus > 0) recommendation = "Check";

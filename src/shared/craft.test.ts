@@ -101,3 +101,10 @@ test("surplus price threshold does not override collection reserve", () => {
   assert.equal(item.surplus, 1);
   assert.equal(item.recommendation, "Sell for platinum");
 });
+
+test("unavailable market price holds surplus for review", () => {
+  const part = row("part", "component", 2);
+  const plan = planCollection(snapshot([part]), [], baseSettings);
+  assert.equal(plan.items[0].surplus, 2);
+  assert.equal(plan.items[0].recommendation, "Check");
+});
