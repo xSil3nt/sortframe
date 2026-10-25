@@ -8,6 +8,8 @@ The app uses Electron with a sandboxed React interface. Inventory, recipes, pric
 
 Steam sign-in opens an isolated child window on Steam's official website. The current login attempt's callback is checked before its code reaches the companion exchange. The signed-in Steam session is remembered using Windows-protected encryption and restored for later syncs. Steam can require sign-in or confirmation again when the session expires. Settings includes Disconnect Steam to remove it. There is no separate authentication helper.
 
+The sign-in window blocks downloads and renders official HTML auth pages inline. If Warframe reports an active-session conflict, Sortframe asks before retrying with the companion's session override. Cancel is the default. Proceeding can disconnect the game and interrupt a mission.
+
 ## Current features
 
 - Inventory table with Keep, Sell for platinum, Ducats, and Check decisions.

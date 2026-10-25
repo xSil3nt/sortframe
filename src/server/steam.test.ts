@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { steamLoginPayload, setSteamAuthenticator, syncSteamInventory } from "./steam.js";
+import { steamLoginPayload, setSteamAuthenticator, setSessionConflictConfirmation, syncSteamInventory } from "./steam.js";
 import { demoSnapshot, demoRecipes } from "./demo.js";
 import type { CraftData } from "./catalog.js";
 
@@ -84,4 +84,43 @@ test("plain-text active-session errors are explained without requesting a discon
     assert.equal(requests.length, 1);
     assert.equal(requests[0].includes("kick"), false);
   } finally { globalThis.fetch = originalFetch; }
+});
+
+test("session override retries once only after explicit confirmation", async () => {
+  const originalFetch = globalThis.fetch;
+  const payloads: Record<string, unknown>[] = [];
+  let confirmations = 0;
+  let signIns = 0;
+  const part = catalog.items.find((entry) => entry.kind === "component")!;
+  setSteamAuthenticator(async () => { signIns++; return "synthetic-steam-code"; });
+  setSessionConflictConfirmation(async () => { confirmations++; return true; });
+  globalThis.fetch = async (input, init) => {
+    const path = new URL(String(input)).pathname;
+    if (path.endsWith("login.php")) {
+      payloads.push(JSON.parse(String(init?.body)));
+      if (payloads.length === 1) return new Response("Nonce still set", { status: 409 });
+      return Response.json({ id: "synthetic-account", Nonce: 12 });
+    }
+    return Response.json(path.endsWith("inventory.php") ? { Recipes: [{ ItemType: part.id, ItemCount: 1 }] } : {});
+  };
+  try {
+    await syncSteamInventory(catalog);
+    assert.equal(confirmations, 1);
+    assert.equal(signIns, 1);
+    assert.equal(payloads[0].kick, undefined);
+    assert.equal(payloads[1].kick, 1);
+    assert.equal(payloads[1].steamCode, payloads[0].steamCode);
+  } finally { globalThis.fetch = originalFetch; setSessionConflictConfirmation(undefined); }
+});
+
+test("cancelling the conflict popup sends no override request", async () => {
+  const originalFetch = globalThis.fetch;
+  let requests = 0;
+  setSteamAuthenticator(async () => "synthetic-steam-code");
+  setSessionConflictConfirmation(async () => false);
+  globalThis.fetch = async () => { requests++; return new Response("Nonce still set", { status: 409 }); };
+  try {
+    await assert.rejects(syncSteamInventory(catalog), /Sync cancelled/);
+    assert.equal(requests, 1);
+  } finally { globalThis.fetch = originalFetch; setSessionConflictConfirmation(undefined); }
 });

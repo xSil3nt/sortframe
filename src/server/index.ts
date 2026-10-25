@@ -9,7 +9,7 @@ import { loadCraftData } from "./catalog.js";
 import { parseCompanionInventory } from "./companion.js";
 import { canAuthenticateSteam, syncSteamInventory } from "./steam.js";
 import { db, loadSettings, loadSnapshot, saveSettings, saveSnapshot } from "./store.js";
-export { setSteamAuthenticator } from "./steam.js";
+export { setSteamAuthenticator, setSessionConflictConfirmation } from "./steam.js";
 
 export const app = Fastify({ logger: false, bodyLimit: 12 * 1024 * 1024, trustProxy: false });
 let closing = false;

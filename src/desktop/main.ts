@@ -7,6 +7,7 @@ import { homedir } from "node:os";
 import { isAbortedNavigation, parseSteamCallback } from "./steam-callback.js";
 import { createProtectedStore } from "./protected-store.js";
 import { hasSteamLogin, selectSteamCookies, steamCookieDetails, type StoredSteamCookie } from "./steam-cookies.js";
+import { inlineAuthHeaders } from "./auth-response.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const appOrigin = "sortframe://app";
@@ -36,6 +37,7 @@ async function authenticateSteam(): Promise<string> {
   const epoch = steamAuthEpoch;
   const authSession = session.fromPartition(`sortframe-steam-${state}`);
   authSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
+  authSession.webRequest.onHeadersReceived((details, callback) => callback({ responseHeaders: inlineAuthHeaders(details.url, details.resourceType, details.responseHeaders) }));
   await Promise.allSettled(steamCookies.map((cookie) => authSession.cookies.set(steamCookieDetails(cookie))));
   return await new Promise<string>((resolveCode, reject) => {
     const window = new BrowserWindow({ title: "Steam — steamcommunity.com", width: 560, height: 760, minWidth: 460, minHeight: 600, parent: mainWindow ?? undefined, autoHideMenuBar: true, show: !hasSteamLogin(steamCookies), backgroundColor: "#171d19", webPreferences: { session: authSession, sandbox: true, contextIsolation: true, nodeIntegration: false, webSecurity: true } });
@@ -79,6 +81,14 @@ async function authenticateSteam(): Promise<string> {
       const allowed = target.protocol === "https:" && ["steamcommunity.com", "store.steampowered.com", "login.steampowered.com", "help.steampowered.com", "mobile.warframe.com"].includes(target.hostname);
       if (!allowed) event.preventDefault();
     };
+    authSession.on("will-download", (event, item) => {
+      event.preventDefault();
+      for (const url of [...item.getURLChain(), item.getURL()]) {
+        const callback = parseSteamCallback(url, state);
+        if (callback.kind === "complete") { finish(callback.code); return; }
+      }
+      finish(undefined, "Steam returned an unexpected authentication download. No file was saved. Retry signing in.");
+    });
     window.webContents.on("will-navigate", navigate);
     window.webContents.on("will-redirect", navigate);
     window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
@@ -119,6 +129,15 @@ async function startDesktop() {
   const backend = await import("../server/index.js");
   closeBackend = backend.closeBackend;
   backend.setSteamAuthenticator(authenticateSteam);
+  backend.setSessionConflictConfirmation(async () => {
+    if (!mainWindow || mainWindow.isDestroyed() || shuttingDown) return false;
+    const result = await dialog.showMessageBox(mainWindow, {
+      type: "warning", title: "Warframe session already active", message: "Disconnect the active Warframe session and sync?",
+      detail: "Proceeding can sign you out of the game and interrupt your current mission. Cancel to keep playing, or close Warframe normally before syncing.",
+      buttons: ["Cancel", "Disconnect game and sync"], defaultId: 0, cancelId: 0, noLink: true
+    });
+    return result.response === 1;
+  });
   await backend.app.ready();
   const webRoot = resolve(here, "../web");
   session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));

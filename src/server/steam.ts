@@ -7,6 +7,13 @@ const companionRoot = "https://mobile.warframe.com/api";
 const clientType = "CAA";
 
 let desktopAuthenticator: (() => Promise<string>) | undefined;
+let confirmSessionOverride: (() => Promise<boolean>) | undefined;
+
+export class ActiveSessionConflict extends Error {}
+
+export function setSessionConflictConfirmation(confirm: (() => Promise<boolean>) | undefined) {
+  confirmSessionOverride = confirm;
+}
 
 export function setSteamAuthenticator(authenticator: () => Promise<string>) {
   desktopAuthenticator = authenticator;
@@ -43,26 +50,29 @@ async function companionRequest(endpoint: "login.php" | "inventory.php" | "logou
   const text = (await response.text()).replace(/^\uFEFF/, "");
   const format = /text\/html/i.test(response.headers.get("content-type") ?? "") || /^\s*<!?(?:doctype|html)/i.test(text) ? "HTML" : "non-JSON";
   const classify = (detail: string) => {
-    if (/nonce still set|active session|already.*session|another.*login/i.test(detail)) return "Warframe reports an active session conflict. Close the game normally and retry; Sortframe did not disconnect it.";
+    if (/nonce still set|active session|already.*session|another.*login/i.test(detail)) return "Warframe reports an active session conflict. Close the game normally and retry.";
     if (/captcha required|verify.*human/i.test(detail)) return "Warframe requires human verification before companion sign-in. Your saved inventory was kept.";
     if (/new hardware detected|new country detected/i.test(detail)) return "Warframe requires an emailed security code for this device. That verification step is not connected yet; your saved inventory was kept.";
     return null;
   };
   const knownFailure = classify(text);
   if (!response.ok) {
-    if (knownFailure) throw new Error(knownFailure);
+    if (knownFailure) throw /active session conflict/.test(knownFailure) ? new ActiveSessionConflict(knownFailure) : new Error(knownFailure);
     if (response.status === 403) throw new Error(`Warframe's ${stage} gateway denied the request (HTTP 403, ${format}). Your saved inventory was kept.`);
     if (response.status >= 300 && response.status < 400) throw new Error(`Warframe redirected the ${stage} request (HTTP ${response.status}). Sign in again; your saved inventory was kept.`);
     throw new Error(`Warframe rejected the ${stage} request (HTTP ${response.status}). Your saved inventory was kept.`);
   }
   let value: unknown;
   try { value = JSON.parse(text); } catch {
-    if (knownFailure) throw new Error(knownFailure);
+    if (knownFailure) throw /active session conflict/.test(knownFailure) ? new ActiveSessionConflict(knownFailure) : new Error(knownFailure);
     throw new Error(`Warframe returned ${format} during ${stage} (HTTP ${response.status}). Your saved inventory was kept.`);
   }
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`Warframe returned an invalid ${stage} response (HTTP ${response.status}). Your saved inventory was kept.`);
   const detail = (value as Record<string, unknown>).Error ?? (value as Record<string, unknown>).error ?? (value as Record<string, unknown>).message;
-  if (typeof detail === "string" && classify(detail)) throw new Error(classify(detail)!);
+  if (typeof detail === "string" && classify(detail)) {
+    const message = classify(detail)!;
+    throw /active session conflict/.test(message) ? new ActiveSessionConflict(message) : new Error(message);
+  }
   if ((value as Record<string, unknown>).Error || (value as Record<string, unknown>).error || Number((value as Record<string, unknown>).status ?? 200) >= 400) throw new Error(`Warframe rejected ${stage}. Sign in again; your saved inventory was kept.`);
   return value as Record<string, unknown>;
 }
@@ -72,7 +82,14 @@ export async function syncSteamInventory(catalog: CraftData | Promise<CraftData>
   const code = await desktopAuthenticator();
   const data = await catalog;
   if (data.source !== "live") throw new Error("Live Prime item data is unavailable. Your saved inventory was kept.");
-  const login = await companionRequest("login.php", new URLSearchParams({ ct: clientType }), steamLoginPayload(code));
+  const loginPayload = steamLoginPayload(code);
+  let login: Record<string, unknown>;
+  try { login = await companionRequest("login.php", new URLSearchParams({ ct: clientType }), loginPayload); }
+  catch (error) {
+    if (!(error instanceof ActiveSessionConflict) || !confirmSessionOverride) throw error;
+    if (!await confirmSessionOverride()) throw new Error("Sync cancelled. The active Warframe session was left alone.");
+    login = await companionRequest("login.php", new URLSearchParams({ ct: clientType }), { ...loginPayload, kick: 1 });
+  }
   const accountId = login.id ?? login.accountId;
   const rawNonce = login.Nonce ?? login.nonce;
   if (typeof accountId !== "string" || !accountId || !(typeof rawNonce === "string" && rawNonce.length > 0 || typeof rawNonce === "number" && Number.isFinite(rawNonce))) throw new Error("Warframe did not establish a companion session. Your saved inventory was kept.");
