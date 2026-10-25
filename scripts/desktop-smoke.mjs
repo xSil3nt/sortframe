@@ -1,0 +1,56 @@
+import { _electron } from "playwright-core";
+import assert from "node:assert/strict";
+import { mkdir, mkdtemp, readFile } from "node:fs/promises";
+import { resolve, join } from "node:path";
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
+await mkdir("work", { recursive: true });
+const temporary = await mkdtemp(resolve("work", "desktop-check-"));
+const packaged = process.argv[2] ? resolve(process.argv[2]) : null;
+const environment = { ...process.env, SORTFRAME_DATA_DIR: join(temporary, "data"), SORTFRAME_PROFILE_DIR: join(temporary, "profile") };
+delete environment.ELECTRON_RUN_AS_NODE;
+const desktop = await _electron.launch({ executablePath: packaged ?? require("electron"), args: packaged ? [] : ["."], env: environment, cwd: process.cwd(), timeout: 30000, chromiumSandbox: true });
+let exited = false;
+try {
+  const window = await desktop.firstWindow();
+  window.setDefaultTimeout(15000);
+  const errors = [];
+  window.on("pageerror", (error) => errors.push(error.message));
+  await window.getByRole("heading", { name: "Prime inventory", exact: true }).waitFor();
+  assert.equal(window.url(), "sortframe://app/");
+  assert.equal(await window.evaluate(() => typeof globalThis.require), "undefined");
+  const snapshot = await window.evaluate(async () => (await fetch("/api/snapshot")).json());
+  assert.equal(snapshot.source, "demo");
+  assert.equal(snapshot.entries.length, 16);
+  await window.getByText("Lex Prime", { exact: true }).click();
+  await window.getByRole("dialog").waitFor();
+  await window.getByRole("button", { name: "Close", exact: true }).click();
+  const exportPath = join(temporary, "snapshot.json");
+  await desktop.evaluate(({ dialog }, filePath) => { dialog.showSaveDialog = async () => ({ canceled: false, filePath }); }, exportPath);
+  await window.getByRole("button", { name: "Export", exact: true }).click();
+  await window.waitForFunction(() => document.querySelector('[role="status"]')?.textContent?.includes("Inventory exported."));
+  const exported = JSON.parse(await readFile(exportPath, "utf8"));
+  assert.equal(exported.source, "demo");
+  await window.getByRole("button", { name: /Settings/ }).click();
+  await window.getByRole("heading", { name: "Settings", exact: true }).waitFor();
+  await desktop.context().route("https://steamcommunity.com/**", (route) => route.fulfill({ contentType: "text/html", body: "<title>Steam window test</title>" }));
+  await desktop.evaluate(() => { globalThis.fetch = async () => new Response("{}", { status: 503 }); });
+  const authEvent = desktop.waitForEvent("window");
+  await window.getByRole("button", { name: "Connect with Steam", exact: true }).click();
+  const steam = await authEvent;
+  await steam.waitForURL(/^https:\/\/steamcommunity\.com\//);
+  await desktop.evaluate(({ BrowserWindow }) => { for (const child of BrowserWindow.getAllWindows()) if (child.webContents.getURL().startsWith("https://steamcommunity.com/")) child.destroy(); });
+  await window.waitForFunction(() => document.querySelector('[role="status"]')?.textContent?.includes("cancelled"));
+  assert.equal(await window.getByRole("button", { name: "Connect with Steam", exact: true }).isEnabled(), true);
+  await window.getByRole("button", { name: /Inventory/ }).click();
+  await window.screenshot({ path: resolve("work", "desktop-smoke.png") });
+  assert.deepEqual(errors, []);
+  const closed = desktop.waitForEvent("close", { timeout: 15000 });
+  await window.getByRole("button", { name: "Quit Sortframe", exact: true }).click();
+  await closed;
+  exited = true;
+  console.log("Desktop smoke passed: isolated renderer, demo plan, export, Steam window, cancellation, and quit.");
+} finally {
+  if (!exited) desktop.process().kill();
+}

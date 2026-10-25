@@ -1,8 +1,5 @@
 import Fastify from "fastify";
-import fastifyStatic from "@fastify/static";
 import { randomUUID } from "node:crypto";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
 import { SnapshotSchema, SettingsSchema, type Snapshot } from "../shared/models.js";
 import { planCollection } from "../shared/craft.js";
 import { demoRecipes, demoSnapshot } from "./demo.js";
@@ -10,24 +7,18 @@ import { findMarketItem, getCachedQuote, getQuote } from "./market.js";
 import { connectMarketAccount, disconnectMarketAccount, getMyMarketOrders, marketAccountStatus, updateMarketOrder, createMarketOrder } from "./market-account.js";
 import { loadCraftData } from "./catalog.js";
 import { parseCompanionInventory } from "./companion.js";
-import { syncSteamInventory } from "./steam.js";
+import { canAuthenticateSteam, syncSteamInventory } from "./steam.js";
 import { db, loadSettings, loadSnapshot, saveSettings, saveSnapshot } from "./store.js";
+export { setSteamAuthenticator } from "./steam.js";
 
-const app = Fastify({ logger: false, bodyLimit: 12 * 1024 * 1024, trustProxy: false });
+export const app = Fastify({ logger: false, bodyLimit: 12 * 1024 * 1024, trustProxy: false });
 let closing = false;
-let boundPort = Number(process.env.SORTFRAME_PORT ?? 4175);
 const marketDrafts = new Map<string, { revision: string; expiry: number; items: Map<string, { maxQuantity: number; orderIds: string[]; updateOrderId: string | null }> }>();
 const localHost = (value: string | undefined) => !value || /^(127\.0\.0\.1|localhost|\[::1\])(?::\d+)?$/i.test(value);
 
 app.addHook("onRequest", async (request, reply) => {
   if (!localHost(request.headers.host)) return reply.code(403).send({ error: "Sortframe only accepts local connections." });
-  const origin = request.headers.origin;
-  if (origin && !/^http:\/\/(127\.0\.0\.1|localhost|\[::1\])(?::\d+)?$/i.test(origin)) return reply.code(403).send({ error: "Request origin is not allowed." });
-  if (["POST", "PUT", "PATCH", "DELETE"].includes(request.method) && origin) {
-    const allowed = new Set([`http://127.0.0.1:${boundPort}`, `http://localhost:${boundPort}`]);
-    if (process.env.NODE_ENV !== "production") allowed.add("http://127.0.0.1:5173");
-    if (!allowed.has(origin)) return reply.code(403).send({ error: "Request origin does not match Sortframe." });
-  }
+  if (request.headers.origin) return reply.code(403).send({ error: "Browser requests must use the desktop app." });
 });
 
 app.get("/api/health", async () => ({ ok: true, closing }));
@@ -202,12 +193,10 @@ app.post("/api/import-companion", async (request, reply) => {
   }
 });
 app.post("/api/warframe/steam/sync", async (_request, reply) => {
-  const launcherPath = process.env.SORTFRAME_LAUNCHER_PATH;
-  if (!launcherPath) return reply.code(503).send({ error: "Steam sign in is available from the packaged Windows app." });
+  if (!canAuthenticateSteam()) return reply.code(503).send({ error: "Steam sign in is available inside the Sortframe desktop app." });
   try {
-    const data = await loadCraftData(demoSnapshot().entries, demoRecipes);
-    if (data.source !== "live") return reply.code(503).send({ error: "Live Prime item data is unavailable. Your saved inventory was left unchanged." });
-    const snapshot = await syncSteamInventory(launcherPath, data);
+    const data = loadCraftData(demoSnapshot().entries, demoRecipes);
+    const snapshot = await syncSteamInventory(data);
     if (!snapshot.entries.length) return reply.code(400).send({ error: "Warframe returned an empty inventory. Your saved inventory was left unchanged." });
     return saveSnapshot(snapshot);
   } catch (error) {
@@ -221,37 +210,11 @@ app.get("/api/export", async (_request, reply) => {
   return loadSnapshot();
 });
 app.post("/api/quit", async (_request, reply) => {
-  reply.send({ ok: true });
-  setTimeout(async () => {
-    closing = true;
-    try { await app.close(); } finally { db.close(); }
-  }, 100);
+  return reply.send({ ok: true });
 });
 
-if (process.env.NODE_ENV === "production") {
-  const here = dirname(fileURLToPath(import.meta.url));
-  await app.register(fastifyStatic, { root: resolve(here, "../web"), prefix: "/" });
-  app.setNotFoundHandler(async (request, reply) => {
-    if (request.url.startsWith("/api/")) return reply.code(404).send({ error: "Not found" });
-    return reply.sendFile("index.html");
-  });
+export async function closeBackend() {
+  if (closing) return;
+  closing = true;
+  try { await app.close(); } finally { db.close(); }
 }
-
-const preferredPort = Number(process.env.SORTFRAME_PORT ?? 4175);
-let port = preferredPort;
-for (; port < preferredPort + 10; port++) {
-  boundPort = port;
-  try {
-    await app.listen({ host: "127.0.0.1", port });
-    break;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "EADDRINUSE") throw error;
-  }
-}
-if (port === preferredPort + 10) throw new Error("No available local port was found.");
-if (process.env.SORTFRAME_READY_FILE) {
-  const { writeFileSync } = await import("node:fs");
-  writeFileSync(process.env.SORTFRAME_READY_FILE, String(port), { encoding: "utf8" });
-}
-process.on("SIGINT", async () => { if (!closing) await app.close(); db.close(); process.exit(0); });
-process.on("SIGTERM", async () => { if (!closing) await app.close(); db.close(); process.exit(0); });

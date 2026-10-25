@@ -1,0 +1,27 @@
+appId: com.xsil3nt.sortframe
+productName: Sortframe
+artifactName: Sortframe-${version}-${arch}.${ext}
+directories:
+  output: release
+files:
+  - dist/**
+  - package.json
+  - LICENSE
+  - THIRD_PARTY_NOTICES.md
+asar: true
+win:
+  icon: build/icon.ico
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: zip
+      arch: [x64]
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  deleteAppDataOnUninstall: false
+  artifactName: Sortframe-Setup-${version}-${arch}.${ext}
+  createDesktopShortcut: true
+  shortcutName: Sortframe
+publish: null
