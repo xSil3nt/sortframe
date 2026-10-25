@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { mkdir, mkdtemp, readFile } from "node:fs/promises";
 import { resolve, join } from "node:path";
 import { createRequire } from "node:module";
+import { createServer } from "node:http";
 
 const require = createRequire(import.meta.url);
 await mkdir("work", { recursive: true });
@@ -12,6 +13,7 @@ const environment = { ...process.env, SORTFRAME_DATA_DIR: join(temporary, "data"
 delete environment.ELECTRON_RUN_AS_NODE;
 const desktop = await _electron.launch({ executablePath: packaged ?? require("electron"), args: packaged ? [] : ["."], env: environment, cwd: process.cwd(), timeout: 30000, chromiumSandbox: true });
 let exited = false;
+let attachmentServer;
 try {
   const window = await desktop.firstWindow();
   window.setDefaultTimeout(15000);
@@ -40,12 +42,18 @@ try {
   assert.equal(exported.source, "demo");
   await window.getByRole("button", { name: /Settings/ }).click();
   await window.getByRole("heading", { name: "Settings", exact: true }).waitFor();
-  let attachmentResponse = true;
-  await desktop.context().route("https://steamcommunity.com/**", (route) => route.fulfill({ headers: { "content-type": "text/html", ...(attachmentResponse ? { "content-disposition": 'attachment; filename="auth.html"' } : {}) }, body: "<title>Steam window test</title>" }));
+  await desktop.context().route("https://steamcommunity.com/**", (route) => route.fulfill({ contentType: "text/html", body: "<title>Steam window test</title>" }));
   await desktop.evaluate(() => { globalThis.fetch = async () => new Response("{}", { status: 503 }); });
+  attachmentServer = createServer((_request, response) => { response.writeHead(200, { "content-type": "text/html", "content-disposition": 'attachment; filename="auth.html"' }); response.end("<title>Local authentication download test</title>"); });
+  await new Promise((ready) => attachmentServer.listen(0, "127.0.0.1", ready));
+  const attachmentUrl = `http://127.0.0.1:${attachmentServer.address().port}/auth.html`;
+  const attachmentWindowEvent = desktop.waitForEvent("window");
   await window.getByRole("button", { name: "Connect with Steam", exact: true }).click();
-  await window.waitForFunction(() => document.querySelector('[role="status"]')?.textContent?.includes("unexpected authentication download")).catch(async (error) => { console.error(await window.getByRole("status").allTextContents()); throw error; });
-  attachmentResponse = false;
+  const attachmentWindow = await attachmentWindowEvent;
+  await attachmentWindow.waitForURL(/^https:\/\/steamcommunity\.com\//);
+  await desktop.evaluate(({ BrowserWindow }, url) => { BrowserWindow.getAllWindows().find((entry) => entry.webContents.getURL().startsWith("https://steamcommunity.com/")).webContents.downloadURL(url); }, attachmentUrl);
+  await window.waitForFunction(() => document.querySelector('[role="status"]')?.textContent?.includes("unexpected authentication download"));
+  await new Promise((closed) => attachmentServer.close(closed));
   const authEvent = desktop.waitForEvent("window");
   await window.getByRole("button", { name: "Connect with Steam", exact: true }).click();
   const steam = await authEvent;
@@ -78,5 +86,6 @@ try {
   exited = true;
   console.log("Desktop smoke passed: renderer isolation, demo, export, Steam cancellation, protected session saving, disconnect, and quit.");
 } finally {
+  if (attachmentServer?.listening) await new Promise((closed) => attachmentServer.close(closed));
   if (!exited) desktop.process().kill();
 }
