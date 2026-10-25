@@ -1,0 +1,50 @@
+name: Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - run: npm ci --omit=dev --ignore-scripts
+      - run: choco install innosetup --yes --no-progress
+      - shell: pwsh
+        run: |
+          $stage = Join-Path $env:GITHUB_WORKSPACE 'stage'
+          $release = Join-Path $env:GITHUB_WORKSPACE 'release'
+          New-Item -ItemType Directory -Force -Path "$stage\app\dist\server", "$stage\app\dist\web", "$stage\app\node_modules", "$stage\runtime", $release | Out-Null
+          Copy-Item 'dist\server\*' "$stage\app\dist\server" -Recurse -Force
+          Copy-Item 'dist\web\*' "$stage\app\dist\web" -Recurse -Force
+          Copy-Item 'node_modules\*' "$stage\app\node_modules" -Recurse -Force
+          Copy-Item 'package.json' "$stage\app\package.json"
+          $nodeBase = 'https://nodejs.org/dist/v24.22.0'
+          Invoke-WebRequest "$nodeBase/win-x64/node.exe" -OutFile "$stage\runtime\node.exe"
+          $sums = (Invoke-WebRequest "$nodeBase/SHASUMS256.txt").Content
+          $nodeSum = (($sums -split "`n" | Where-Object { $_ -match 'win-x64/node.exe\s*$' } | Select-Object -First 1) -split '\s+')[0]
+          if (-not $nodeSum -or (Get-FileHash "$stage\runtime\node.exe" -Algorithm SHA256).Hash.ToLower() -ne $nodeSum.ToLower()) { throw 'Node.js runtime checksum validation failed.' }
+          dotnet publish 'launcher\Sortframe.csproj' -c Release -o "$stage" --self-contained true -r win-x64
+          & 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' "/O$release" 'installer\sortframe.iss'
+          Compress-Archive -Path "$stage\*" -DestinationPath "$release\Sortframe-Portable-x64.zip" -Force
+          Get-FileHash "$release\Sortframe-Setup-0.1.0-x64.exe","$release\Sortframe-Portable-x64.zip" -Algorithm SHA256 | ForEach-Object { "$($_.Hash)  $([IO.Path]::GetFileName($_.Path))" } | Set-Content "$release\SHA256SUMS.txt"
+      - uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: release/*
