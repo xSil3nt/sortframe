@@ -33,3 +33,23 @@ Filename: "{app}\Sortframe.exe"; Description: "Launch Sortframe"; Flags: postins
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}\runtime"
+
+[Code]
+function IsWebView2Installed(): Boolean;
+var
+  Version: String;
+begin
+  Result := RegQueryStringValue(HKLM32, 'SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}', 'pv', Version);
+  if not Result then
+    Result := RegQueryStringValue(HKCU, 'Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}', 'pv', Version);
+  Result := Result and (Version <> '') and (Version <> '0.0.0.0');
+end;
+
+function InitializeSetup(): Boolean;
+var
+  ResultCode: Integer;
+begin
+  Result := True;
+  if not IsWebView2Installed() and (MsgBox('Steam sign in uses Microsoft WebView2 Runtime. Install it now from Microsoft?', mbConfirmation, MB_YESNO) = IDYES) then
+    ShellExec('open', 'https://developer.microsoft.com/microsoft-edge/webview2/', '', '', SW_SHOWNORMAL, ewNoWait, ResultCode);
+end;

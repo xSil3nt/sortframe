@@ -23,7 +23,7 @@ async function get<T>(url: string, headers: Record<string, string> = {}): Promis
   await pace();
   let response: Response;
   for (let attempt = 0; ; attempt++) {
-    response = await fetch(url, { headers: { "User-Agent": "Sortframe/0.1 (+https://github.com/xSil3nt/sortframe)", "Language": "en", ...headers }, signal: AbortSignal.timeout(15000) });
+  response = await fetch(url, { headers: { "User-Agent": "Sortframe/0.1.0 (+https://github.com/xSil3nt/sortframe)", "Language": "en", ...headers }, signal: AbortSignal.timeout(15000) });
     if (response.status !== 429 || attempt >= 2) break;
     const retryAfter = Number(response.headers.get("retry-after")) || 2 ** (attempt + 1);
     await new Promise((resolve) => setTimeout(resolve, Math.min(retryAfter, 30) * 1000));
