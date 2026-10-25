@@ -9,6 +9,7 @@ import { demoRecipes, demoSnapshot } from "./demo.js";
 import { getCachedQuote, getQuote } from "./market.js";
 import { loadCraftData } from "./catalog.js";
 import { parseCompanionInventory } from "./companion.js";
+import { syncSteamInventory } from "./steam.js";
 import { db, loadSettings, loadSnapshot, saveSettings, saveSnapshot } from "./store.js";
 
 const app = Fastify({ logger: false, bodyLimit: 12 * 1024 * 1024, trustProxy: false });
@@ -87,6 +88,19 @@ app.post("/api/import-companion", async (request, reply) => {
     return saveSnapshot(parseCompanionInventory(request.body, data));
   } catch (error) {
     return reply.code(400).send({ error: error instanceof Error ? error.message : "Companion inventory could not be imported." });
+  }
+});
+app.post("/api/warframe/steam/sync", async (_request, reply) => {
+  const launcherPath = process.env.SORTFRAME_LAUNCHER_PATH;
+  if (!launcherPath) return reply.code(503).send({ error: "Steam sign in is available from the packaged Windows app." });
+  try {
+    const data = await loadCraftData(demoSnapshot().entries, demoRecipes);
+    if (data.source !== "live") return reply.code(503).send({ error: "Live Prime item data is unavailable. Your saved inventory was left unchanged." });
+    const snapshot = await syncSteamInventory(launcherPath, data);
+    if (!snapshot.entries.length) return reply.code(400).send({ error: "Warframe returned an empty inventory. Your saved inventory was left unchanged." });
+    return saveSnapshot(snapshot);
+  } catch (error) {
+    return reply.code(502).send({ error: error instanceof Error ? error.message : "Warframe companion sync failed. Your saved inventory was left unchanged." });
   }
 });
 app.post("/api/demo/reset", async () => saveSnapshot(demoSnapshot()));

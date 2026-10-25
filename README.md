@@ -2,7 +2,7 @@
 
 Sortframe plans which Prime parts to keep for crafting, which surplus parts may be worth selling, and which can go to Baro for Ducats. Inventory decisions are suggestions. Sortframe never consumes items in game.
 
-The project is early development. The reserve planner, live Prime catalog, public prices, and synthetic demo work locally. Companion login and sync, marketplace account sign-in, and order publishing are not connected yet. No installer or portable release is published until those account flows and a fresh-user install have been validated.
+The project is early development. The reserve planner, live Prime catalog, public prices, and synthetic demo work locally. A Windows Steam sign-in window and companion sync path are implemented, but they have not been validated against a live Warframe account. Warframe email login, marketplace account sign-in, and order publishing are not connected. No installer or portable release is published until the remaining account flows and a fresh-user install have been validated.
 
 ## Current build
 
@@ -13,6 +13,7 @@ The project is early development. The reserve planner, live Prime catalog, publi
 - Live Prime equipment recipes from WFCD and Prime part identifiers from the public warframe.market v2 catalog.
 - PC-only warframe.market order-book quotes with 24-hour metadata and five-minute quote caches, using a two-request-per-second queue.
 - Import of a companion inventory JSON response, including mastery, invested copies, and recognized pending builds.
+- Packaged Windows Steam sign-in through a WebView2 window and companion inventory sync, with no game disconnect request and no persisted companion session. This flow still needs live account validation.
 - Per-user SQLite database in the Windows local application data directory.
 - Synthetic demo inventory, validated JSON import/export, and protected snapshots.
 - Loopback-only local server with origin checks on write requests.
@@ -41,11 +42,11 @@ npm run build
 
 The local server binds to `127.0.0.1`. The production launcher stores the database in `%LOCALAPPDATA%\Sortframe`; portable builds use the same per-user location. App files and user data are kept separately. The JSON export contains the current snapshot, so review it before sharing.
 
-Sortframe does not currently ask for account credentials, sync from Warframe, or publish marketplace orders. Do not enter passwords into this build. Account adapters will be enabled only after the login flows and local token handling are validated.
+The current Windows Steam flow does not ask for a Warframe password. It opens Steam's sign-in page in a temporary WebView2 profile, hands the returned code to the local service over a per-attempt named pipe, and discards the profile afterward. The companion request and inventory parsing still need live account validation. Warframe email login, warframe.market sign-in, and publishing are not implemented; do not enter passwords for those connections.
 
 ## Distribution
 
-The Windows x64 release workflow is configured to package a bundled Node runtime, a self-contained launcher, an installer, and a portable ZIP. A release is not considered ready until a clean Windows account can install or extract it, connect its own accounts, sync inventory, inspect the reserve explanations, and publish a reviewed order batch.
+The Windows x64 workflow packages a bundled Node runtime, a self-contained launcher, an installer, and a portable ZIP. Release publication requires a deliberate manual run on a `v*` tag with the publish input enabled. Keep that input off until a clean Windows account can install or extract the app, connect its own accounts, sync inventory, inspect reserve explanations, and publish a reviewed order batch.
 
 ## Third-party data
 

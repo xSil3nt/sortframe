@@ -20,7 +20,7 @@ test("companion equipment, part stacks, mastery, investment, and pending build a
     Recipes: [{ ItemType: "part", ItemCount: 3 }, { ItemType: "bp", ItemCount: 1 }],
     PendingRecipes: [{ ItemType: "weapon", ItemCount: 1 }]
   }, catalog);
-  assert.equal(result.source, "import");
+  assert.equal(result.source, "companion");
   assert.deepEqual(result.entries.map((entry) => [entry.id, entry.quantity, entry.invested, entry.mastered]), [["part", 3, 0, false], ["bp", 1, 0, false], ["weapon", 1, 1, true]]);
   assert.deepEqual(result.pendingBuilds, [{ itemId: "weapon", name: "Test Prime", quantity: 1 }]);
 });

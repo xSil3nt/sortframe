@@ -69,7 +69,7 @@ export function parseCompanionInventory(raw: unknown, catalog: CraftData): Snaps
   });
 
   const snapshot = {
-    revision: randomUUID(), source: "import" as const, capturedAt: new Date().toISOString(),
+    revision: randomUUID(), source: "companion" as const, capturedAt: new Date().toISOString(),
     entries: [...counts.values()], pendingBuilds
   };
   const parsed = SnapshotSchema.safeParse(snapshot);
