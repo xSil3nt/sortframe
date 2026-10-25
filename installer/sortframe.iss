@@ -50,6 +50,6 @@ var
   ResultCode: Integer;
 begin
   Result := True;
-  if not IsWebView2Installed() and (MsgBox('Steam sign in uses Microsoft WebView2 Runtime. Install it now from Microsoft?', mbConfirmation, MB_YESNO) = IDYES) then
+  if not IsWebView2Installed() and (MsgBox('Sortframe uses Microsoft WebView2 Runtime for Steam sign in. It is not installed. Open Microsoft''s download page?', mbConfirmation, MB_YESNO) = IDYES) then
     ShellExec('open', 'https://developer.microsoft.com/microsoft-edge/webview2/', '', '', SW_SHOWNORMAL, ewNoWait, ResultCode);
 end;
